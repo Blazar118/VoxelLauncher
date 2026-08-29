@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.spec
+build/
+dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 日志
+logs/
+*.log
+
+# 配置和数据（包含敏感信息）
+config.json
+*.json
+!package.json
+!requirements.txt
+
+# 临时文件
+*.tmp
+*.temp
+*.bak
+
+# 游戏联动构建
+voxellauncher-bridge/build/
+voxellauncher-bridge/.gradle/
+gradle-8.8/
+gradle88.zip
+
+# 图片资源（可选，根据需要决定是否上传）
+# *.png
+# *.jpg
+
+# 打包好的 exe
+*.exe

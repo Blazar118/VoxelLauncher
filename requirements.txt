@@ -1,0 +1,13 @@
+# VoxelLauncher 运行依赖
+# GUI 仅用标准库 tkinter(无需安装)
+# 网络请求使用 requests
+requests>=2.28.0
+# mod 图标显示需要 Pillow
+pillow>=9.0.0
+
+# 可选: 支持从系统拖拽 mod 文件到列表(非必须)
+# 需要先安装: pip install tkinterdnd2
+# tkinterdnd2
+
+# 打包(仅开发者需要)
+# pip install pyinstaller

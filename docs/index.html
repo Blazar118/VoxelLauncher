@@ -416,6 +416,32 @@
             box-shadow: 16px 0 0 var(--gold);
         }
 
+        .feature-icon.skin {
+            background: var(--dirt);
+            position: relative;
+        }
+        .feature-icon.skin::after {
+            content: '';
+            position: absolute;
+            top: 8px; left: 16px;
+            width: 16px; height: 20px;
+            background: #fcd2b0;
+            box-shadow: 0 -8px 0 #8b5a2b, -4px 24px 0 #4a90d9, 4px 24px 0 #4a90d9;
+        }
+
+        .feature-icon.net {
+            background: var(--stone);
+            position: relative;
+        }
+        .feature-icon.net::after {
+            content: '';
+            position: absolute;
+            top: 18px; left: 10px;
+            width: 28px; height: 4px;
+            background: var(--diamond);
+            box-shadow: 0 8px 0 var(--diamond), 0 -8px 0 var(--diamond);
+        }
+
         .feature-title {
             font-family: 'Press Start 2P', monospace;
             font-size: 13px;
@@ -684,6 +710,30 @@
             box-shadow: -4px -8px 0 #5d4037, 32px -8px 0 #5d4037, 4px 4px 0 #fff, 20px 4px 0 #fff;
         }
 
+        .gameplay-icon.skin-big {
+            background: var(--dirt);
+        }
+        .gameplay-icon.skin-big::after {
+            content: '';
+            position: absolute;
+            top: 10px; left: 18px;
+            width: 20px; height: 24px;
+            background: #fcd2b0;
+            box-shadow: 0 -10px 0 #8b5a2b, -6px 28px 0 #4a90d9, 6px 28px 0 #4a90d9;
+        }
+
+        .gameplay-icon.net-big {
+            background: var(--stone);
+        }
+        .gameplay-icon.net-big::after {
+            content: '';
+            position: absolute;
+            top: 22px; left: 10px;
+            width: 36px; height: 4px;
+            background: var(--diamond);
+            box-shadow: 0 10px 0 var(--diamond), 0 -10px 0 var(--diamond);
+        }
+
         .gameplay-title {
             font-family: 'Press Start 2P', monospace;
             font-size: 16px;
@@ -948,6 +998,16 @@
                 <h3 class="feature-title">游戏联动</h3>
                 <p class="feature-desc">通过轻量级 Bridge Mod 实现实时联动。启动器里获得的物品、击杀的怪物，游戏里同步生效。</p>
             </div>
+            <div class="feature-card">
+                <div class="feature-icon skin"></div>
+                <h3 class="feature-title">皮肤编辑器</h3>
+                <p class="feature-desc">内置像素皮肤编辑器，画笔、橡皮擦、取色器、填充工具一应俱全。64x64 展开图编辑，实时正面预览，画完直接应用到游戏。</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon net"></div>
+                <h3 class="feature-title">联机功能</h3>
+                <p class="feature-desc">局域网自动扫描同一WiFi下的MC世界，一键加入。支持手动添加外网服务器，双击直接连接。和朋友一起玩更方便。</p>
+            </div>
         </div>
     </section>
 
@@ -1109,6 +1169,59 @@
 
         <div class="gameplay-note">
             <p>所有娱乐玩法获得的物品，都可以通过「发送到游戏」按钮同步到你正在运行的 Minecraft 存档里。不需要手动搬运，启动器帮你搞定。</p>
+        </div>
+
+        <h2 class="section-title" style="margin-top: 60px;">其他工具</h2>
+
+        <div class="gameplay-block">
+            <div class="gameplay-header">
+                <div class="gameplay-icon skin-big"></div>
+                <div>
+                    <h3 class="gameplay-title">皮肤编辑器</h3>
+                    <p class="gameplay-subtitle">自己画皮肤，想用啥皮肤用啥皮肤</p>
+                </div>
+            </div>
+            <div class="gameplay-content">
+                <p>在娱乐页点「皮肤编辑器」按钮打开。一个完整的像素画皮肤编辑器，不需要装其他软件。</p>
+                <ul class="gameplay-list">
+                    <li>工具：画笔、橡皮擦、取色器、油漆桶填充，撤销重做最多50步</li>
+                    <li>调色板：36个预设颜色 + 自定义取色器，笔刷大小1x1/2x2/3x3</li>
+                    <li>64x64 展开图编辑，头、身体、手臂、腿每个面都能画，支持外层（帽子/夹克）</li>
+                    <li>右边部位列表，点哪个部位画布上橙色高亮，下面实时正面预览</li>
+                    <li>可以打开现有皮肤PNG修改，也可以新建空白皮肤从头画</li>
+                    <li>画完点「应用到游戏」，下次启动游戏自动用这个皮肤</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="gameplay-block">
+            <div class="gameplay-header">
+                <div class="gameplay-icon net-big"></div>
+                <div>
+                    <h3 class="gameplay-title">联机</h3>
+                    <p class="gameplay-subtitle">局域网一键连，外网也能加</p>
+                </div>
+            </div>
+            <div class="gameplay-content">
+                <p>顶部标签页有个「联机」页面，专门用来和朋友一起玩。</p>
+                <ul class="gameplay-list">
+                    <li><b>局域网联机</b>：点「扫描局域网」，自动找出同一WiFi/路由器下别人开的MC世界，双击直接加入</li>
+                    <li><b>显示本机IP</b>：页面上显示你的局域网IP，点「复制IP」就能发给朋友</li>
+                    <li><b>手动添加服务器</b>：外网服务器可以手动加地址，支持IP:端口格式</li>
+                    <li><b>服务器状态</b>：显示在线人数、游戏版本，一键刷新</li>
+                    <li><b>一键加入</b>：选中服务器点「加入」，自动启动游戏并连接，不用手动输地址</li>
+                    <li>服务器列表自动保存，下次打开还在</li>
+                </ul>
+                <div class="how-to">
+                    <div class="how-to-title">局域网联机怎么用</div>
+                    <ol class="how-to-list">
+                        <li>你和朋友连同一个WiFi（或同一个路由器）</li>
+                        <li>一个人在游戏里按 ESC -> 对局域网开放，选个端口</li>
+                        <li>另一个人在启动器「联机」页点「扫描局域网」，等几秒就会出现</li>
+                        <li>双击那个服务器，自动启动游戏并连进去</li>
+                    </ol>
+                </div>
+            </div>
         </div>
     </section>
 

@@ -745,6 +745,66 @@
             text-align: center;
         }
 
+        /* 界面总览 */
+        .gameplay-overview {
+            background: var(--bg2);
+            border: 2px solid var(--border);
+            padding: 24px;
+            margin-bottom: 40px;
+        }
+
+        .overview-title {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 13px;
+            color: var(--gold);
+            margin-bottom: 12px;
+        }
+
+        .overview-text {
+            font-size: 14px;
+            color: var(--text-dim);
+            line-height: 1.8;
+            margin-bottom: 10px;
+        }
+
+        /* 操作步骤 */
+        .how-to {
+            margin-top: 20px;
+            padding: 16px;
+            background: rgba(0,0,0,0.2);
+            border-left: 4px solid var(--grass);
+        }
+
+        .how-to-title {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 11px;
+            color: var(--grass);
+            margin-bottom: 12px;
+        }
+
+        .how-to-list {
+            padding-left: 20px;
+            margin: 0;
+        }
+
+        .how-to-list li {
+            font-size: 14px;
+            color: var(--text-dim);
+            line-height: 1.8;
+            margin-bottom: 6px;
+        }
+
+        .gameplay-icon.chest-big {
+            background: var(--dirt);
+        }
+        .gameplay-icon.chest-big::after {
+            content: '';
+            position: absolute;
+            top: 18px; left: 22px;
+            width: 12px; height: 16px;
+            background: var(--gold);
+        }
+
         /* 游戏联动说明 */
         .link-intro {
             text-align: center;
@@ -896,6 +956,12 @@
         <h2 class="section-title">娱乐玩法</h2>
         <p class="gameplay-intro">启动器不只是用来启动游戏的。等待加载的时候、不想开游戏的时候，你可以在这里挖矿、打怪、钓鱼、养动物。获得的东西都能同步到游戏里，不白玩。</p>
 
+        <div class="gameplay-overview">
+            <h3 class="overview-title">从哪进入？</h3>
+            <p class="overview-text">打开启动器后，顶部有几个标签页。点击「娱乐」标签就能进入娱乐页面。页面顶部有一排按钮：交易、锻造台、合成镐、熔炉、高炉、附魔、钓鱼、养殖、合成。点对应的按钮就会打开对应的功能窗口。</p>
+            <p class="overview-text">页面中间是挖矿区域，显示当前矿层的矿石，点击矿石就能挖。页面上方显示当前时间（白天/黑夜）、天气、手里的镐子和斧子、等级经验。右上角是背包，挖到的东西都在里面。</p>
+        </div>
+
         <div class="gameplay-block">
             <div class="gameplay-header">
                 <div class="gameplay-icon pickaxe-big"></div>
@@ -912,6 +978,17 @@
                     <li>挖到的矿石可以在熔炉里烧成锭，也可以直接发送到游戏背包</li>
                     <li>挖矿会获得经验，等级高了能解锁更高级的镐子</li>
                 </ul>
+                <div class="how-to">
+                    <div class="how-to-title">具体怎么操作</div>
+                    <ol class="how-to-list">
+                        <li>在娱乐页面中间，你会看到几个矿石方块（煤矿、铁矿、金矿、钻石矿等）</li>
+                        <li>用鼠标点击矿石方块，角色就会挥镐挖矿，挖几下矿石就碎了，东西进背包</li>
+                        <li>不同矿石需要不同等级的镐子：煤矿木镐就能挖，金矿需要铁镐，钻石需要铁镐以上，下界合金矿需要钻石镐</li>
+                        <li>镐子有耐久，用坏了会自动变回木镐，需要重新合成</li>
+                        <li>想升级镐子就点顶部的「合成镐」按钮，用对应的材料合成更高级的镐子</li>
+                        <li>挖到的矿石可以点「熔炉」烧成锭，或者点「发送到游戏」直接发到游戏背包</li>
+                    </ol>
+                </div>
             </div>
         </div>
 
@@ -932,6 +1009,17 @@
                     <li>重点：在启动器里击杀某种怪物，游戏里你附近的同种怪物也会全部死亡！比如启动器里打死一只僵尸，游戏里你身边的僵尸都会死</li>
                     <li>可以输入指令召唤铁傀儡、雪傀儡这些友好生物帮你打</li>
                 </ul>
+                <div class="how-to">
+                    <div class="how-to-title">具体怎么操作</div>
+                    <ol class="how-to-list">
+                        <li>战斗不需要专门打开窗口，到了晚上（页面顶部显示「夜晚」），挖矿区域会自动刷出怪物</li>
+                        <li>怪物会慢慢向你靠近，点击怪物就能挥剑攻击，怪物头上会显示血条</li>
+                        <li>白天怪物不会刷，已经刷出来的怪物白天会着火燃烧掉血</li>
+                        <li>如果打不过，可以在输入框里输入指令召唤帮手：输入「召唤铁傀儡」会生成铁傀儡帮你打怪，输入「召唤雪傀儡」会生成雪傀儡</li>
+                        <li>击杀怪物后掉落物自动进背包，同时游戏里你附近的同种怪物也会全部死亡（需要安装联动Mod并运行游戏）</li>
+                        <li>武器可以在「合成」里用材料升级，越高级的剑伤害越高</li>
+                    </ol>
+                </div>
             </div>
         </div>
 
@@ -951,6 +1039,17 @@
                     <li>也有概率钓到垃圾：碗、钓鱼竿、皮革、水瓶</li>
                     <li>钓到的鱼可以直接发送到游戏背包</li>
                 </ul>
+                <div class="how-to">
+                    <div class="how-to-title">具体怎么操作</div>
+                    <ol class="how-to-list">
+                        <li>点顶部的「钓鱼」按钮，会打开钓鱼窗口，里面有一片水面和一个鱼漂</li>
+                        <li>点「抛竿」按钮，鱼漂会飞到水面上，然后就是等</li>
+                        <li>过几秒到十几秒，鱼漂会突然往下沉，这时候立刻点「收竿」，就钓到东西了</li>
+                        <li>如果收竿太早或太晚，就什么都钓不到，需要重新抛竿</li>
+                        <li>下雨天钓鱼速度更快，钓到宝藏的概率也更高</li>
+                        <li>钓到的东西自动进背包，可以发送到游戏里</li>
+                    </ol>
+                </div>
             </div>
         </div>
 
@@ -970,6 +1069,40 @@
                     <li>养羊：定期剪羊毛，不同颜色的羊给不同颜色的羊毛</li>
                     <li>养猪：定期获得猪肉</li>
                     <li>收获的产品都可以发送到游戏背包</li>
+                </ul>
+                <div class="how-to">
+                    <div class="how-to-title">具体怎么操作</div>
+                    <ol class="how-to-list">
+                        <li>点顶部的「养殖」按钮，会打开牧场窗口，里面有你养的动物</li>
+                        <li>一开始可能没有动物，需要先通过挖矿、钓鱼或者交易获得动物幼崽</li>
+                        <li>动物会显示成长进度，长大了才能收获产品</li>
+                        <li>点「收获」按钮就能收集当前动物产出的东西（鸡蛋、牛奶、羊毛等）</li>
+                        <li>动物需要喂食，饿着的动物不会产出东西，用对应的食物喂它们</li>
+                        <li>收获的产品自动进背包，可以发送到游戏里</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+
+        <div class="gameplay-block">
+            <div class="gameplay-header">
+                <div class="gameplay-icon chest-big"></div>
+                <div>
+                    <h3 class="gameplay-title">其他辅助功能</h3>
+                    <p class="gameplay-subtitle">熔炉、合成、附魔、交易，一个都不能少</p>
+                </div>
+            </div>
+            <div class="gameplay-content">
+                <p>除了四个核心玩法，还有一堆辅助功能帮你处理物资，就像真正的 Minecraft 一样。</p>
+                <ul class="gameplay-list">
+                    <li><b>熔炉/高炉</b>：把挖到的矿石烧成锭，把生肉烧成熟肉。高炉烧矿石更快，熔炉什么都能烧</li>
+                    <li><b>合成</b>：用材料合成工具和武器。木剑、石剑、铁剑，还有各种工具都在这里做</li>
+                    <li><b>合成镐</b>：专门合成镐子的地方，从木镐一路合到钻石镐</li>
+                    <li><b>锻造台</b>：把钻石镐和下界合金锭锻造成下界合金镐，最强镐子</li>
+                    <li><b>附魔</b>：给镐子和剑附魔，效率附魔挖得更快，耐久附魔用得更久</li>
+                    <li><b>交易</b>：流浪商人会随机出现，可以用物资交换稀有物品</li>
+                    <li><b>箱子</b>：背包满了可以把东西存进箱子，箱子里的东西也会保存</li>
+                    <li><b>昼夜天气</b>：页面顶部显示当前时间和天气，白天挖矿安全，晚上刷怪，下雨天钓鱼更快</li>
                 </ul>
             </div>
         </div>

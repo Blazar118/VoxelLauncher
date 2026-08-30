@@ -599,6 +599,152 @@
             color: var(--grass);
         }
 
+        /* ===== 娱乐玩法详解 ===== */
+        .gameplay-intro {
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 15px;
+            line-height: 2;
+            margin-bottom: 50px;
+            max-width: 700px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .gameplay-block {
+            background: var(--bg2);
+            border: 3px solid var(--border);
+            margin-bottom: 30px;
+            overflow: hidden;
+        }
+
+        .gameplay-header {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding: 20px 24px;
+            background: rgba(0,0,0,0.2);
+            border-bottom: 3px solid var(--border);
+        }
+
+        .gameplay-icon {
+            width: 56px;
+            height: 56px;
+            flex-shrink: 0;
+            border: 2px solid #000;
+            position: relative;
+        }
+
+        .gameplay-icon.pickaxe-big {
+            background: var(--stone);
+        }
+        .gameplay-icon.pickaxe-big::after {
+            content: '';
+            position: absolute;
+            top: 10px; left: 10px;
+            width: 36px; height: 10px;
+            background: var(--diamond);
+            box-shadow: 0 10px 0 var(--diamond), 14px 20px 0 var(--dirt), 14px 30px 0 var(--dirt);
+        }
+
+        .gameplay-icon.sword-big {
+            background: var(--stone);
+        }
+        .gameplay-icon.sword-big::after {
+            content: '';
+            position: absolute;
+            top: 6px; left: 24px;
+            width: 10px; height: 32px;
+            background: var(--iron);
+            box-shadow: 0 -6px 0 var(--iron), -10px 38px 0 var(--dirt), 10px 38px 0 var(--dirt);
+        }
+
+        .gameplay-icon.fish-big {
+            background: var(--stone);
+        }
+        .gameplay-icon.fish-big::after {
+            content: '';
+            position: absolute;
+            top: 22px; left: 8px;
+            width: 28px; height: 14px;
+            background: var(--diamond);
+            border-radius: 7px 0 0 7px;
+            box-shadow: 28px 4px 0 var(--diamond), 28px -4px 0 var(--diamond);
+        }
+
+        .gameplay-icon.cow-big {
+            background: var(--stone);
+        }
+        .gameplay-icon.cow-big::after {
+            content: '';
+            position: absolute;
+            top: 16px; left: 10px;
+            width: 36px; height: 24px;
+            background: #5d4037;
+            box-shadow: -4px -8px 0 #5d4037, 32px -8px 0 #5d4037, 4px 4px 0 #fff, 20px 4px 0 #fff;
+        }
+
+        .gameplay-title {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 16px;
+            color: var(--grass);
+            margin-bottom: 6px;
+        }
+
+        .gameplay-subtitle {
+            font-size: 13px;
+            color: var(--text-dim);
+        }
+
+        .gameplay-content {
+            padding: 24px;
+        }
+
+        .gameplay-content > p {
+            font-size: 14px;
+            color: var(--text);
+            line-height: 1.8;
+            margin-bottom: 16px;
+        }
+
+        .gameplay-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .gameplay-list li {
+            font-size: 14px;
+            color: var(--text-dim);
+            padding: 6px 0 6px 24px;
+            position: relative;
+            line-height: 1.7;
+        }
+
+        .gameplay-list li::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 12px;
+            width: 10px;
+            height: 10px;
+            background: var(--grass);
+            border: 2px solid #000;
+        }
+
+        .gameplay-note {
+            background: rgba(93, 156, 60, 0.1);
+            border: 2px solid var(--grass);
+            padding: 20px 24px;
+            margin-top: 30px;
+        }
+
+        .gameplay-note p {
+            font-size: 14px;
+            color: var(--text);
+            line-height: 1.8;
+            text-align: center;
+        }
+
         /* 游戏联动说明 */
         .link-intro {
             text-align: center;
@@ -689,6 +835,7 @@
             <div class="nav-logo">VOXEL</div>
             <ul class="nav-links">
                 <li><a href="#features">功能</a></li>
+                <li><a href="#gameplay">玩法</a></li>
                 <li><a href="#link">游戏联动</a></li>
                 <li><a href="#download">下载</a></li>
                 <li><a href="https://github.com/Blazar118/VoxelLauncher" target="_blank">GitHub</a></li>
@@ -741,6 +888,94 @@
                 <h3 class="feature-title">游戏联动</h3>
                 <p class="feature-desc">通过轻量级 Bridge Mod 实现实时联动。启动器里获得的物品、击杀的怪物，游戏里同步生效。</p>
             </div>
+        </div>
+    </section>
+
+    <!-- 娱乐玩法详解 -->
+    <section id="gameplay">
+        <h2 class="section-title">娱乐玩法</h2>
+        <p class="gameplay-intro">启动器不只是用来启动游戏的。等待加载的时候、不想开游戏的时候，你可以在这里挖矿、打怪、钓鱼、养动物。获得的东西都能同步到游戏里，不白玩。</p>
+
+        <div class="gameplay-block">
+            <div class="gameplay-header">
+                <div class="gameplay-icon pickaxe-big"></div>
+                <div>
+                    <h3 class="gameplay-title">挖矿</h3>
+                    <p class="gameplay-subtitle">点一下挖一下，越挖越深</p>
+                </div>
+            </div>
+            <div class="gameplay-content">
+                <p>就像在游戏里挖矿一样，点击矿石方块就能挖。从地表的煤矿、铁矿，到深层的钻石、下界合金，越深的矿石越难挖，但也越值钱。</p>
+                <ul class="gameplay-list">
+                    <li>矿石会随时间慢慢刷新，挖完了等一会儿又有新的</li>
+                    <li>镐子有等级：木镐、石镐、铁镐、钻石镐、下界合金镐，越高级挖得越快</li>
+                    <li>挖到的矿石可以在熔炉里烧成锭，也可以直接发送到游戏背包</li>
+                    <li>挖矿会获得经验，等级高了能解锁更高级的镐子</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="gameplay-block">
+            <div class="gameplay-header">
+                <div class="gameplay-icon sword-big"></div>
+                <div>
+                    <h3 class="gameplay-title">战斗</h3>
+                    <p class="gameplay-subtitle">夜晚会刷怪，拿起武器 defend yourself</p>
+                </div>
+            </div>
+            <div class="gameplay-content">
+                <p>游戏里有昼夜循环，到了晚上就会刷出僵尸、骷髅、蜘蛛这些敌对生物。你可以用剑击杀它们，获得掉落物。</p>
+                <ul class="gameplay-list">
+                    <li>怪物有血量，不同怪物血量不同，僵尸20血，骷髅20血，蜘蛛16血</li>
+                    <li>武器有等级：木剑、石剑、铁剑、钻石剑、下界合金剑，伤害递增</li>
+                    <li>击杀怪物会掉落腐肉、骨头、线、蜘蛛眼等物品</li>
+                    <li>重点：在启动器里击杀某种怪物，游戏里你附近的同种怪物也会全部死亡！比如启动器里打死一只僵尸，游戏里你身边的僵尸都会死</li>
+                    <li>可以输入指令召唤铁傀儡、雪傀儡这些友好生物帮你打</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="gameplay-block">
+            <div class="gameplay-header">
+                <div class="gameplay-icon fish-big"></div>
+                <div>
+                    <h3 class="gameplay-title">钓鱼</h3>
+                    <p class="gameplay-subtitle">抛竿、等鱼咬钩、收竿，真实手感</p>
+                </div>
+            </div>
+            <div class="gameplay-content">
+                <p>和游戏里一样的钓鱼机制：抛竿出去，等鱼漂下沉的时候收竿。鱼的纹理都是从游戏资源里提取的，看起来和游戏里一模一样。</p>
+                <ul class="gameplay-list">
+                    <li>能钓到各种鱼：生鳕鱼、生鲑鱼、河豚、热带鱼</li>
+                    <li>有概率钓到宝藏：附魔书、命名牌、鞍、鹦鹉螺壳</li>
+                    <li>也有概率钓到垃圾：碗、钓鱼竿、皮革、水瓶</li>
+                    <li>钓到的鱼可以直接发送到游戏背包</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="gameplay-block">
+            <div class="gameplay-header">
+                <div class="gameplay-icon cow-big"></div>
+                <div>
+                    <h3 class="gameplay-title">养殖</h3>
+                    <p class="gameplay-subtitle">养鸡养牛养羊，自给自足</p>
+                </div>
+            </div>
+            <div class="gameplay-content">
+                <p>可以养各种动物，定期收获产品。动物的贴图都是从游戏里提取的，和游戏里长得一样。</p>
+                <ul class="gameplay-list">
+                    <li>养鸡：定期收获鸡蛋，鸡蛋可以孵出小鸡</li>
+                    <li>养牛：定期获得牛奶，用桶装</li>
+                    <li>养羊：定期剪羊毛，不同颜色的羊给不同颜色的羊毛</li>
+                    <li>养猪：定期获得猪肉</li>
+                    <li>收获的产品都可以发送到游戏背包</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="gameplay-note">
+            <p>所有娱乐玩法获得的物品，都可以通过「发送到游戏」按钮同步到你正在运行的 Minecraft 存档里。不需要手动搬运，启动器帮你搞定。</p>
         </div>
     </section>
 

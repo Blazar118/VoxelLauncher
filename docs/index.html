@@ -599,6 +599,69 @@
             color: var(--grass);
         }
 
+        /* 游戏联动说明 */
+        .link-intro {
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 15px;
+            line-height: 2;
+            margin-bottom: 40px;
+        }
+
+        .link-steps {
+            margin-top: 50px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 700px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .step {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+            background: var(--bg2);
+            border: 2px solid var(--border);
+            padding: 20px;
+        }
+
+        .step-num {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 16px;
+            color: #000;
+            background: var(--grass);
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            border: 2px solid #000;
+        }
+
+        .step-title {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 11px;
+            color: var(--text);
+            margin-bottom: 8px;
+        }
+
+        .step-desc {
+            font-size: 14px;
+            color: var(--text-dim);
+            line-height: 1.7;
+        }
+
+        .link-note {
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 13px;
+            margin-top: 30px;
+            font-style: italic;
+        }
+
         /* ===== 响应式 ===== */
         @media (max-width: 768px) {
             .hero-title {
@@ -685,6 +748,9 @@
     <div class="link-section" id="link">
         <div class="link-container">
             <h2 class="section-title">游戏联动</h2>
+            <p class="link-intro">什么是游戏联动？就是你在启动器里做的事，游戏里会真实发生。<br>
+            启动器里挖到钻石，游戏背包里就多出一颗钻石；启动器里打死僵尸，游戏里你身边的僵尸也会一起死。<br>
+            不需要切来切去，两个世界是连在一起的。</p>
             <div class="link-demo">
                 <div class="link-demo-box launcher">
                     <span class="link-demo-label">启动器</span>
@@ -707,6 +773,30 @@
                     <div class="link-item"><div class="link-item-dot skeleton"></div>附近骷髅全部死亡</div>
                 </div>
             </div>
+            <div class="link-steps">
+                <div class="step">
+                    <div class="step-num">1</div>
+                    <div class="step-text">
+                        <div class="step-title">安装 Bridge Mod</div>
+                        <div class="step-desc">在启动器设置里点「安装联动Mod」，会自动把一个很小的 Mod 装进你的游戏实例。这个 Mod 只负责和启动器通信，不影响游戏性能。</div>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-num">2</div>
+                    <div class="step-text">
+                        <div class="step-title">启动游戏</div>
+                        <div class="step-desc">正常启动游戏，进入任意存档。启动器会自动检测到游戏运行，联动功能就激活了。</div>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-num">3</div>
+                    <div class="step-text">
+                        <div class="step-title">开始联动</div>
+                        <div class="step-desc">在启动器里挖矿、打怪、钓鱼、养殖，获得的物品会自动发送到游戏背包，击杀的怪物会在游戏里同步死亡。</div>
+                    </div>
+                </div>
+            </div>
+            <p class="link-note">注意：联动功能需要游戏正在运行，并且安装了 Bridge Mod。只支持单机模式，不影响服务器。</p>
         </div>
     </div>
 

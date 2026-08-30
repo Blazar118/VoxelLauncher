@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoxelLauncher - Minecraft 第三方启动器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #4ade80;
+            --secondary: #60a5fa;
+            --accent: #f472b6;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* 动态背景 */
+        .bg-animation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background: linear-gradient(-45deg, #0f172a, #1e3a5f, #1a1a2e, #0f172a);
+            background-size: 400% 400%;
+            animation: gradient 15s ease infinite;
+        }
+
+        @keyframes gradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        /* 导航栏 */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            padding: 1rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .nav-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 2rem;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            transition: color 0.3s;
+            font-size: 0.95rem;
+        }
+
+        .nav-links a:hover {
+            color: var(--primary);
+        }
+
+        /* Hero 区域 */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 2rem;
+            position: relative;
+        }
+
+        .hero-content {
+            max-width: 800px;
+            animation: fadeInUp 1s ease;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .hero h1 {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, var(--primary), var(--secondary), var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: shimmer 3s ease-in-out infinite;
+            background-size: 200% 200%;
+        }
+
+        @keyframes shimmer {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .hero p {
+            font-size: 1.3rem;
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 1rem 2.5rem;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), #22c55e);
+            color: #000;
+            box-shadow: 0 4px 20px rgba(74, 222, 128, 0.4);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 30px rgba(74, 222, 128, 0.6);
+        }
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            color: var(--text-primary);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.2);
+            transform: translateY(-3px);
+        }
+
+        .version-tag {
+            display: inline-block;
+            background: rgba(74, 222, 128, 0.2);
+            color: var(--primary);
+            padding: 0.3rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+            border: 1px solid rgba(74, 222, 128, 0.3);
+        }
+
+        /* 通用 section */
+        section {
+            padding: 6rem 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .section-title {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .section-subtitle {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-bottom: 4rem;
+        }
+
+        /* 功能卡片 */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 2rem;
+            transition: all 0.3s;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--primary);
+            box-shadow: 0 10px 40px rgba(74, 222, 128, 0.2);
+        }
+
+        .feature-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .feature-card h3 {
+            font-size: 1.3rem;
+            margin-bottom: 0.8rem;
+            color: var(--primary);
+        }
+
+        .feature-card p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        /* 截图展示 */
+        .screenshots {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+        }
+
+        .screenshot-card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.3s;
+        }
+
+        .screenshot-card:hover {
+            transform: scale(1.02);
+            border-color: var(--secondary);
+        }
+
+        .screenshot-placeholder {
+            height: 250px;
+            background: linear-gradient(135deg, #1e293b, #334155);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 4rem;
+        }
+
+        .screenshot-info {
+            padding: 1.5rem;
+        }
+
+        .screenshot-info h4 {
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .screenshot-info p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* 更新日志 */
+        .changelog {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 2.5rem;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .changelog-item {
+            padding: 1.5rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .changelog-item:last-child {
+            border-bottom: none;
+        }
+
+        .changelog-version {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .changelog-version h3 {
+            font-size: 1.3rem;
+            color: var(--primary);
+        }
+
+        .changelog-date {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .changelog-list {
+            list-style: none;
+            color: var(--text-secondary);
+        }
+
+        .changelog-list li {
+            padding: 0.3rem 0;
+            padding-left: 1.5rem;
+            position: relative;
+        }
+
+        .changelog-list li::before {
+            content: "✦";
+            position: absolute;
+            left: 0;
+            color: var(--primary);
+        }
+
+        /* 下载区域 */
+        .download-section {
+            text-align: center;
+            background: linear-gradient(135deg, rgba(74, 222, 128, 0.1), rgba(96, 165, 250, 0.1));
+            border-radius: 24px;
+            padding: 4rem 2rem;
+            border: 1px solid rgba(74, 222, 128, 0.2);
+        }
+
+        .download-section h2 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .download-section p {
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+            font-size: 1.1rem;
+        }
+
+        .download-info {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-top: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .download-info-item {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* 页脚 */
+        footer {
+            text-align: center;
+            padding: 3rem 2rem;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-secondary);
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-bottom: 1rem;
+            list-style: none;
+        }
+
+        .footer-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            transition: color 0.3s;
+        }
+
+        .footer-links a:hover {
+            color: var(--primary);
+        }
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+
+            .hero p {
+                font-size: 1rem;
+            }
+
+            .nav-links {
+                display: none;
+            }
+
+            .section-title {
+                font-size: 1.8rem;
+            }
+
+            section {
+                padding: 4rem 1rem;
+            }
+        }
+
+        /* 滚动动画 */
+        .reveal {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.8s ease;
+        }
+
+        .reveal.active {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-animation"></div>
+
+    <!-- 导航栏 -->
+    <nav>
+        <div class="nav-container">
+            <div class="logo">⚡ VoxelLauncher</div>
+            <ul class="nav-links">
+                <li><a href="#features">功能</a></li>
+                <li><a href="#screenshots">截图</a></li>
+                <li><a href="#changelog">更新日志</a></li>
+                <li><a href="#download">下载</a></li>
+                <li><a href="https://github.com/Blazar118/VoxelLauncher" target="_blank">GitHub</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Hero 区域 -->
+    <section class="hero">
+        <div class="hero-content">
+            <div class="version-tag">🎉 v2.0.0 已发布</div>
+            <h1>VoxelLauncher</h1>
+            <p>不只是启动器！基于 Python + Tkinter 的 Minecraft 第三方启动器，<br>内置挖矿、宠物、AI 聊天、战斗系统，让启动器本身也变成游戏。</p>
+            <div class="hero-buttons">
+                <a href="#download" class="btn btn-primary">⬇ 立即下载</a>
+                <a href="https://github.com/Blazar118/VoxelLauncher" target="_blank" class="btn btn-secondary">⭐ GitHub 仓库</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- 功能介绍 -->
+    <section id="features">
+        <h2 class="section-title reveal">✨ 核心功能</h2>
+        <p class="section-subtitle reveal">启动游戏只是基础，娱乐才是本体</p>
+        <div class="features-grid">
+            <div class="feature-card reveal">
+                <div class="feature-icon">🚀</div>
+                <h3>启动与下载</h3>
+                <p>支持全版本下载、Fabric/Forge 加载器一键安装、Modrinth/CurseForge 模组下载、实例管理、高速下载与断点续传。</p>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon">⛏️</div>
+                <h3>挖矿系统</h3>
+                <p>点击矿石挖矿，获得经验升级镐子，从木镐到钻石镐，不同镐子挖不同矿石，材料还能合成装备。</p>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon">🐱</div>
+                <h3>宠物系统</h3>
+                <p>苦力怕和村民双宠物，在屏幕上走来走去，会说话、会互动，还能接入 AI 进行智能对话。</p>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon">🤖</div>
+                <h3>AI 聊天</h3>
+                <p>支持豆包、Deepseek、Kimi 三个 API，自动检测服务商，宠物按角色设定回复，苦力怕和村民还能互相对话。</p>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon">⚔️</div>
+                <h3>战斗系统</h3>
+                <p>独立战斗页面，夜晚刷僵尸和骷髅，武器从木剑到下界合金剑，击杀掉落物品，支持指令系统。</p>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon">🔗</div>
+                <h3>游戏联动</h3>
+                <p>挖矿实时发送到游戏背包，击杀怪物时游戏附近同种怪物也死亡，启动器与游戏无缝联动。</p>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon">🎣</div>
+                <h3>钓鱼与养殖</h3>
+                <p>钓鱼小游戏，等待鱼上钩把握时机拉杆，钓到各种鱼和宝藏；养殖系统养各种动物，贴图从游戏提取。</p>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon">⚒️</div>
+                <h3>合成系统</h3>
+                <p>工作台合成物品，支持自定义皮肤，合成的物品可以用于升级装备和交易。</p>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon">🚫</div>
+                <h3>千万别点</h3>
+                <p>设置页隐藏彩蛋，点了启动器就"疯了"，标题乱变、按钮骂人、窗口抖动，纯搞笑整蛊功能。</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- 截图展示 -->
+    <section id="screenshots">
+        <h2 class="section-title reveal">📸 界面预览</h2>
+        <p class="section-subtitle reveal">简洁现代的界面设计</p>
+        <div class="screenshots">
+            <div class="screenshot-card reveal">
+                <div class="screenshot-placeholder">🚀</div>
+                <div class="screenshot-info">
+                    <h4>启动页面</h4>
+                    <p>简洁的启动界面，支持自定义背景，一键启动游戏。</p>
+                </div>
+            </div>
+            <div class="screenshot-card reveal">
+                <div class="screenshot-placeholder">🎮</div>
+                <div class="screenshot-info">
+                    <h4>娱乐页面</h4>
+                    <p>挖矿、宠物、钓鱼、养殖，娱乐功能一应俱全。</p>
+                </div>
+            </div>
+            <div class="screenshot-card reveal">
+                <div class="screenshot-placeholder">⚔️</div>
+                <div class="screenshot-info">
+                    <h4>战斗页面</h4>
+                    <p>独立战斗系统，刷怪、武器、指令、战斗日志。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 更新日志 -->
+    <section id="changelog">
+        <h2 class="section-title reveal">📝 更新日志</h2>
+        <p class="section-subtitle reveal">持续更新，功能越来越多</p>
+        <div class="changelog reveal">
+            <div class="changelog-item">
+                <div class="changelog-version">
+                    <h3>v2.0.0</h3>
+                    <span class="changelog-date">2026-08-30</span>
+                </div>
+                <ul class="changelog-list">
+                    <li>第一个公开版本，开源发布</li>
+                    <li>基础功能：版本下载、模组管理、实例管理、高速下载</li>
+                    <li>娱乐功能：挖矿、钓鱼、养殖、合成、背包、宠物系统</li>
+                    <li>AI 聊天：支持豆包/Deepseek/Kimi，自动检测服务商</li>
+                    <li>战斗系统：独立战斗页面，刷怪、武器、指令系统</li>
+                    <li>游戏联动：挖矿联动、战斗联动</li>
+                    <li>"千万别点"混乱模式彩蛋</li>
+                </ul>
+            </div>
+            <div class="changelog-item">
+                <div class="changelog-version">
+                    <h3>v1.0.0</h3>
+                    <span class="changelog-date">2026-08-28</span>
+                </div>
+                <ul class="changelog-list">
+                    <li>内部测试版本</li>
+                    <li>基础启动器功能完成</li>
+                    <li>开始添加娱乐功能</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- 下载区域 -->
+    <section id="download">
+        <div class="download-section reveal">
+            <h2>⬇ 立即下载</h2>
+            <p>Windows 平台，下载后直接运行，无需安装</p>
+            <a href="https://github.com/Blazar118/VoxelLauncher/releases/download/v2.0.0/VoxelLauncher.exe" class="btn btn-primary" style="font-size: 1.3rem; padding: 1.2rem 3rem;">
+                ⬇ 下载 VoxelLauncher v2.0.0
+            </a>
+            <div class="download-info">
+                <span class="download-info-item">📦 大小：约 41 MB</span>
+                <span class="download-info-item">🖥 系统：Windows 10/11</span>
+                <span class="download-info-item">🔧 开源：MIT 协议</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- 页脚 -->
+    <footer>
+        <ul class="footer-links">
+            <li><a href="https://github.com/Blazar118/VoxelLauncher" target="_blank">GitHub</a></li>
+            <li><a href="https://github.com/Blazar118/VoxelLauncher/releases" target="_blank">下载</a></li>
+            <li><a href="https://github.com/Blazar118/VoxelLauncher/issues" target="_blank">反馈问题</a></li>
+        </ul>
+        <p>© 2026 VoxelLauncher | 基于 MIT 协议开源 | Made with ❤️</p>
+    </footer>
+
+    <script>
+        // 滚动动画
+        function reveal() {
+            const reveals = document.querySelectorAll('.reveal');
+            reveals.forEach(element => {
+                const windowHeight = window.innerHeight;
+                const elementTop = element.getBoundingClientRect().top;
+                const elementVisible = 150;
+                if (elementTop < windowHeight - elementVisible) {
+                    element.classList.add('active');
+                }
+            });
+        }
+
+        window.addEventListener('scroll', reveal);
+        reveal();
+
+        // 平滑滚动
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>

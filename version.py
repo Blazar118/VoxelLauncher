@@ -9,7 +9,7 @@ import os
 # ---------------------------------------------------------------
 # 版本号（唯一权威来源）
 # ---------------------------------------------------------------
-VERSION = "2.2.7"
+VERSION = "2.2.8"
 VERSION_TAG = "v" + VERSION  # v2.1.0
 
 # 项目信息
@@ -29,6 +29,18 @@ WEBSITE_URL = "https://blazar118.github.io/VoxelLauncher/"
 # 按从新到旧排列
 # ---------------------------------------------------------------
 HISTORY_VERSIONS = [
+    {
+        "tag": "v2.2.7",
+        "title": "v2.2.7 - 默认合并模式版",
+        "desc": "安装模组加载器(Fabric/Quilt/Forge/NeoForge)默认使用 PCL 合并模式, 不再弹窗询问; 版本文件夹即游戏目录, mods/saves 都在版本文件夹里",
+        "url": GITHUB_URL + "/releases/download/v2.2.7/VoxelLauncher.exe",
+    },
+    {
+        "tag": "v2.2.6",
+        "title": "v2.2.6 - 历史版本完善版",
+        "desc": "修复历史版本页崩溃(LabelFrame 参数错误); 修复性能监控偶发崩溃",
+        "url": GITHUB_URL + "/releases/download/v2.2.6/VoxelLauncher.exe",
+    },
     {
         "tag": "v2.2.5",
         "title": "v2.2.5 - 历史版本+官网链接版",

@@ -323,10 +323,13 @@ def install_quilt(game_version, loader_version=None, api_version=None,
 # Forge
 # ---------------------------------------------------------------
 def forge_promos():
-    data = _get(
-        "https://files.minecraftforge.net/net/minecraftforge/forge/index_promos_slim.json")
-    return data.get("promos", {})
-
+    """获取 Forge 推荐/最新版本(失败时返回空, 由 maven-metadata 兜底)"""
+    try:
+        data = _get(
+            "https://files.minecraftforge.net/net/minecraftforge/forge/index_promos_slim.json")
+        return data.get("promos", {})
+    except Exception:
+        return {}
 
 def forge_versions(game_version):
     """获取 Forge 某游戏版本的全部可用版本列表"""
@@ -448,7 +451,7 @@ def install_forge(game_version, forge_version=None, mods_dir=None,
 
 
 # ---------------------------------------------------------------
-# NeoForge (1.20.2+ 的 Forge 分支)
+# NeoForge (1.20.1+ 的 Forge 分支)
 # ---------------------------------------------------------------
 def neoforge_versions():
     """从 maven-metadata.xml 获取全部 NeoForge 版本列表"""
@@ -462,26 +465,28 @@ def neoforge_versions():
 
 def neoforge_versions_for(game_version):
     """根据游戏版本获取对应 NeoForge 可用版本列表。
-    NeoForge 只支持 1.20.2+, 版本号前缀对应 MC 版本。
+    NeoForge 从 1.20.1 开始支持:
+      - 1.20.1: NeoForge 使用 Forge 47.x 版本号, 与 Forge 共用加载器(返回 Forge 版本列表)
+      - 1.20.2+: 独立版本号(20.x 等), 从 NeoForge maven 获取
     """
     parts = game_version.split(".")
     if len(parts) < 3:
         return []
-    major = int(parts[1])
-    minor = int(parts[2])
-    if major == 20 and minor <= 1:
+    major, minor, patch = int(parts[0]), int(parts[1]), int(parts[2])
+    # NeoForge 1.20.1 = Forge 47.x, 直接复用 Forge 版本列表
+    if major == 1 and minor == 20 and patch == 1:
+        return forge_versions(game_version)
+    # 1.20.0 及以下 NeoForge 不支持
+    if major == 1 and minor == 20 and patch == 0:
         return []
-    if major == 20:
-        prefix = "20.{}".format(minor)
-    else:
-        prefix = "{}.{}".format(major, minor) if minor > 0 else "{}.0".format(major)
+    # 独立 NeoForge 版本, 前缀 = {minor}.{patch}(如 1.20.2 -> 20.2, 1.21.1 -> 21.1)
+    prefix = "{}.{}".format(minor, patch)
 
     versions = neoforge_versions()
     matched = [v for v in versions if v.startswith(prefix + ".") and "beta" not in v.lower()]
     if not matched:
         matched = [v for v in versions if v.startswith(prefix + ".")]
     return matched
-
 
 def neoforge_version_for(game_version):
     """根据游戏版本找到对应 NeoForge 最新版本。"""
@@ -494,9 +499,19 @@ def neoforge_version_for(game_version):
 def install_neoforge(game_version, nf_version=None, mods_dir=None,
                      progress_cb=None):
     """安装 NeoForge: 下载 installer jar 并用 Java 静默安装。
-    NeoForge 只支持 1.20.2+, 1.20.1 及以下请用 Forge。
+    NeoForge 从 1.20.1 开始支持; 1.20.1 使用 Forge 47.x 加载器(直接走 Forge 安装)。
     nf_version: 指定 NeoForge 版本号, None 用最新
     """
+    # NeoForge 1.20.1 = Forge 47.x, 转用 Forge 安装器
+    try:
+        parts = game_version.split(".")
+        if len(parts) >= 3 and int(parts[0]) == 1 and int(parts[1]) == 20 and int(parts[2]) == 1:
+            if progress_cb:
+                progress_cb("NeoForge 1.20.1 即 Forge 47.x, 使用 Forge 加载器安装", 0, 0)
+            return install_forge(game_version, forge_version=nf_version,
+                                 mods_dir=mods_dir, progress_cb=progress_cb)
+    except Exception:
+        pass
     if nf_version:
         nf_ver = nf_version
     else:
@@ -547,7 +562,7 @@ def install_neoforge(game_version, nf_version=None, mods_dir=None,
                 src_vdir = candidates[0]
                 src_version = src_vdir.name
         if not src_vdir:
-            raise RuntimeError("NeoForge 安装完成但未找到版本目录:\n" +  + out[-800:])
+            raise RuntimeError("NeoForge 安装完成但未找到版本目录:\n" + out[-800:])
 
         dest_vdir = _installed_version_dir(src_version)
         if dest_vdir.exists():

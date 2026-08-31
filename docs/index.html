@@ -3,548 +3,361 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VoxelLauncher - Minecraft 第三方启动器</title>
+    <title>VoxelLauncher - 好用的 Minecraft 启动器</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
-            background: #0a0a0f;
-            color: #e0e0e0;
-            overflow-x: hidden;
+            font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+            background: #0f0f1a;
+            color: #d4d4d4;
+            line-height: 1.7;
         }
-
-        /* 导航栏 */
-        .navbar {
-            position: fixed;
-            top: 0;
-            width: 100%;
-            background: rgba(10, 10, 15, 0.9);
-            backdrop-filter: blur(10px);
-            border-bottom: 1px solid rgba(100, 200, 255, 0.2);
-            z-index: 1000;
-            padding: 15px 0;
+        .nav {
+            position: fixed; top: 0; width: 100%;
+            background: rgba(15,15,26,0.92);
+            backdrop-filter: blur(8px);
+            border-bottom: 1px solid #2a2a3e;
+            z-index: 999; padding: 14px 0;
         }
-
-        .nav-container {
-            max-width: 1200px;
-            margin: 0 auto;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0 20px;
+        .nav-inner {
+            max-width: 1100px; margin: 0 auto;
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 0 24px;
         }
-
-        .logo {
-            font-size: 24px;
-            font-weight: bold;
-            background: linear-gradient(135deg, #64c8ff, #a855f7);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .nav-links {
-            display: flex;
-            gap: 30px;
-        }
-
-        .nav-links a {
-            color: #aaa;
-            text-decoration: none;
-            font-size: 14px;
-            transition: color 0.3s;
-        }
-
-        .nav-links a:hover {
-            color: #64c8ff;
-        }
-
-        /* 英雄区域 */
+        .nav .logo { font-size: 20px; font-weight: bold; color: #7dd3fc; }
+        .nav a { color: #999; text-decoration: none; margin-left: 24px; font-size: 14px; }
+        .nav a:hover { color: #7dd3fc; }
         .hero {
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            padding: 140px 24px 80px;
             text-align: center;
-            position: relative;
-            background: radial-gradient(ellipse at center, rgba(100, 200, 255, 0.1) 0%, transparent 70%);
+            background: radial-gradient(ellipse at 50% 0%, rgba(125,211,252,0.12), transparent 60%);
         }
-
-        .hero::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-image: 
-                linear-gradient(rgba(100, 200, 255, 0.03) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(100, 200, 255, 0.03) 1px, transparent 1px);
-            background-size: 50px 50px;
-        }
-
-        .hero-content {
-            position: relative;
-            z-index: 1;
-            max-width: 800px;
-            padding: 0 20px;
-        }
-
         .hero h1 {
-            font-size: 64px;
-            margin-bottom: 20px;
-            background: linear-gradient(135deg, #64c8ff 0%, #a855f7 50%, #ec4899 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            animation: glow 3s ease-in-out infinite;
+            font-size: 52px; color: #fff; margin-bottom: 16px;
+            letter-spacing: 2px;
         }
-
-        @keyframes glow {
-            0%, 100% { filter: brightness(1); }
-            50% { filter: brightness(1.2); }
+        .hero h1 span { color: #7dd3fc; }
+        .hero .sub { font-size: 18px; color: #888; margin-bottom: 36px; }
+        .btn {
+            display: inline-block; padding: 14px 44px;
+            background: linear-gradient(135deg, #38bdf8, #818cf8);
+            color: #fff; text-decoration: none; border-radius: 8px;
+            font-size: 17px; font-weight: bold;
+            transition: transform 0.2s, box-shadow 0.2s;
         }
-
-        .hero p {
-            font-size: 20px;
-            color: #999;
-            margin-bottom: 40px;
-            line-height: 1.6;
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(56,189,248,0.4); }
+        .meta { margin-top: 18px; font-size: 13px; color: #666; }
+        section { padding: 70px 24px; max-width: 1100px; margin: 0 auto; }
+        .sec-title { font-size: 28px; color: #fff; margin-bottom: 36px; text-align: center; }
+        .sec-title::after {
+            content: ''; display: block; width: 50px; height: 3px;
+            background: #38bdf8; margin: 12px auto 0; border-radius: 2px;
         }
-
-        .download-btn {
-            display: inline-block;
-            padding: 18px 50px;
-            font-size: 18px;
-            font-weight: bold;
-            color: white;
-            background: linear-gradient(135deg, #64c8ff, #a855f7);
-            border: none;
-            border-radius: 50px;
-            cursor: pointer;
-            text-decoration: none;
-            transition: all 0.3s;
-            box-shadow: 0 10px 40px rgba(100, 200, 255, 0.3);
+        .grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 18px;
         }
-
-        .download-btn:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 15px 50px rgba(100, 200, 255, 0.5);
+        .card {
+            background: #181828; border: 1px solid #2a2a3e;
+            border-radius: 12px; padding: 22px;
+            transition: border-color 0.2s;
         }
-
-        .download-btn:active {
-            transform: translateY(0);
+        .card:hover { border-color: #38bdf8; }
+        .card h3 { color: #fff; font-size: 17px; margin-bottom: 8px; }
+        .card p { color: #999; font-size: 14px; }
+        .card .tag {
+            display: inline-block; font-size: 11px; padding: 2px 8px;
+            background: rgba(56,189,248,0.15); color: #7dd3fc;
+            border-radius: 4px; margin-bottom: 10px;
         }
-
-        .version-info {
-            margin-top: 20px;
-            font-size: 14px;
-            color: #666;
-        }
-
-        /* 功能区域 */
-        .features {
-            padding: 100px 20px;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        .section-title {
-            text-align: center;
-            font-size: 36px;
-            margin-bottom: 60px;
-            color: #fff;
-        }
-
-        .section-title span {
-            background: linear-gradient(135deg, #64c8ff, #a855f7);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .features-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 30px;
-        }
-
-        .feature-card {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 20px;
-            padding: 30px;
-            transition: all 0.3s;
-        }
-
-        .feature-card:hover {
-            border-color: rgba(100, 200, 255, 0.5);
-            transform: translateY(-5px);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-        }
-
-        .feature-icon {
-            font-size: 40px;
-            margin-bottom: 20px;
-        }
-
-        .feature-card h3 {
-            font-size: 20px;
-            margin-bottom: 10px;
-            color: #fff;
-        }
-
-        .feature-card p {
-            color: #888;
-            line-height: 1.6;
-            font-size: 14px;
-        }
-
-        /* 截图区域 */
-        .screenshots {
-            padding: 100px 20px;
-            background: rgba(255, 255, 255, 0.02);
-        }
-
-        .screenshots-container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        .screenshot-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+        .fun-section { background: #12121f; }
+        .fun-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
             gap: 20px;
         }
-
-        .screenshot-item {
-            border-radius: 15px;
-            overflow: hidden;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            aspect-ratio: 16/9;
+        .fun-card {
             background: linear-gradient(135deg, #1a1a2e, #16213e);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #555;
-            font-size: 14px;
+            border: 1px solid #2d2d4a; border-radius: 14px; padding: 26px;
         }
-
-        /* 下载区域 */
-        .download-section {
-            padding: 100px 20px;
-            text-align: center;
+        .fun-card h3 { color: #c4b5fd; font-size: 18px; margin-bottom: 10px; }
+        .fun-card p { color: #a0a0b8; font-size: 14px; }
+        .shots { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+        .shot {
+            border-radius: 10px; overflow: hidden;
+            border: 1px solid #2a2a3e; background: #181828;
         }
-
-        .download-box {
-            max-width: 600px;
-            margin: 0 auto;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(100, 200, 255, 0.3);
-            border-radius: 30px;
-            padding: 50px;
+        .shot img { width: 100%; display: block; }
+        .shot .cap { padding: 10px 14px; font-size: 13px; color: #888; text-align: center; }
+        .steps { max-width: 700px; margin: 0 auto; }
+        .step { display: flex; gap: 16px; margin-bottom: 22px; align-items: flex-start; }
+        .step .num {
+            min-width: 34px; height: 34px; border-radius: 50%;
+            background: #38bdf8; color: #fff; display: flex;
+            align-items: center; justify-content: center; font-weight: bold;
         }
-
-        .download-box h2 {
-            font-size: 32px;
-            margin-bottom: 20px;
-            color: #fff;
+        .step h4 { color: #fff; font-size: 16px; margin-bottom: 4px; }
+        .step p { color: #999; font-size: 14px; }
+        .dl-box {
+            text-align: center; background: #181828;
+            border: 1px solid #2a2a3e; border-radius: 16px;
+            padding: 50px 30px; max-width: 600px; margin: 0 auto;
         }
-
-        .download-box p {
-            color: #888;
-            margin-bottom: 30px;
+        .dl-box h2 { color: #fff; font-size: 26px; margin-bottom: 10px; }
+        .dl-box p { color: #888; margin-bottom: 28px; }
+        footer {
+            text-align: center; padding: 40px 24px;
+            border-top: 1px solid #2a2a3e; color: #555; font-size: 13px;
         }
-
-        .big-download-btn {
-            display: inline-block;
-            padding: 25px 80px;
-            font-size: 22px;
-            font-weight: bold;
-            color: white;
-            background: linear-gradient(135deg, #64c8ff, #a855f7);
-            border: none;
-            border-radius: 60px;
-            cursor: pointer;
-            text-decoration: none;
-            transition: all 0.3s;
-            box-shadow: 0 15px 50px rgba(100, 200, 255, 0.4);
-        }
-
-        .big-download-btn:hover {
-            transform: scale(1.05);
-            box-shadow: 0 20px 60px rgba(100, 200, 255, 0.6);
-        }
-
-        .download-links {
-            margin-top: 30px;
-            display: flex;
-            justify-content: center;
-            gap: 20px;
-            flex-wrap: wrap;
-        }
-
-        .download-links a {
-            color: #64c8ff;
-            text-decoration: none;
-            font-size: 14px;
-        }
-
-        .download-links a:hover {
-            text-decoration: underline;
-        }
-
-        /* 使用说明 */
-        .guide {
-            padding: 100px 20px;
-            max-width: 900px;
-            margin: 0 auto;
-        }
-
-        .guide-steps {
-            display: flex;
-            flex-direction: column;
-            gap: 30px;
-        }
-
-        .step {
-            display: flex;
-            gap: 20px;
-            align-items: flex-start;
-        }
-
-        .step-number {
-            width: 50px;
-            height: 50px;
-            min-width: 50px;
-            background: linear-gradient(135deg, #64c8ff, #a855f7);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            font-weight: bold;
-            color: white;
-        }
-
-        .step-content h3 {
-            font-size: 20px;
-            margin-bottom: 10px;
-            color: #fff;
-        }
-
-        .step-content p {
-            color: #888;
-            line-height: 1.6;
-        }
-
-        /* 页脚 */
-        .footer {
-            padding: 50px 20px;
-            text-align: center;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-            color: #555;
-            font-size: 14px;
-        }
-
-        .footer a {
-            color: #64c8ff;
-            text-decoration: none;
-        }
-
-        /* 响应式 */
-        @media (max-width: 768px) {
-            .hero h1 {
-                font-size: 40px;
-            }
-            .hero p {
-                font-size: 16px;
-            }
-            .nav-links {
-                display: none;
-            }
-            .download-box {
-                padding: 30px 20px;
-            }
-            .big-download-btn {
-                padding: 20px 50px;
-                font-size: 18px;
-            }
+        footer a { color: #7dd3fc; text-decoration: none; }
+        @media (max-width: 700px) {
+            .hero h1 { font-size: 34px; }
+            .shots { grid-template-columns: 1fr; }
+            .nav a { display: none; }
         }
     </style>
 </head>
 <body>
-    <!-- 导航栏 -->
-    <nav class="navbar">
-        <div class="nav-container">
-            <div class="logo">VoxelLauncher</div>
-            <div class="nav-links">
-                <a href="#features">功能特点</a>
-                <a href="#screenshots">界面预览</a>
-                <a href="#download">立即下载</a>
-                <a href="#guide">使用说明</a>
-                <a href="https://github.com/Blazar118/VoxelLauncher" target="_blank">GitHub</a>
+
+<div class="nav">
+    <div class="nav-inner">
+        <div class="logo">VoxelLauncher</div>
+        <div>
+            <a href="#features">功能</a>
+            <a href="#fun">娱乐</a>
+            <a href="#shots">截图</a>
+            <a href="#download">下载</a>
+            <a href="https://github.com/Blazar118/VoxelLauncher" target="_blank">GitHub</a>
+        </div>
+    </div>
+</div>
+
+<div class="hero">
+    <h1>Voxel<span>Launcher</span></h1>
+    <p class="sub">一个功能全、上手快的 Minecraft 第三方启动器<br>装模组、开服、联机、玩点花活，一个软件全搞定</p>
+    <a href="#download" class="btn">立即下载</a>
+    <div class="meta">当前版本 v2.1.0 · Windows 10/11 · 免安装，下载即用</div>
+</div>
+
+<section id="features">
+    <h2 class="sec-title">核心功能</h2>
+    <div class="grid">
+        <div class="card">
+            <span class="tag">启动</span>
+            <h3>一键启动游戏</h3>
+            <p>选好版本和账号，点启动就完事。自动扫 Java、自动补游戏文件，不用你操心。</p>
+        </div>
+        <div class="card">
+            <span class="tag">启动</span>
+            <h3>自动加入服务器</h3>
+            <p>把服务器 IP 填进去，启动游戏直接进服，不用再手动点多人游戏、加服务器了。</p>
+        </div>
+        <div class="card">
+            <span class="tag">模组</span>
+            <h3>Modrinth 一键下载</h3>
+            <p>内置 Modrinth 搜索，想装什么模组直接搜直接下。还能导入 mrpack 整合包。</p>
+        </div>
+        <div class="card">
+            <span class="tag">模组</span>
+            <h3>自动装依赖</h3>
+            <p>下载模组时自动把它需要的前置模组也装上，支持递归依赖，再也不用一个个找了。</p>
+        </div>
+        <div class="card">
+            <span class="tag">开服</span>
+            <h3>一键开服</h3>
+            <p>原版、Fabric 服务端都能一键建。自动同意 EULA，启动后显示本机和外网地址，一键复制。</p>
+        </div>
+        <div class="card">
+            <span class="tag">开服</span>
+            <h3>服务器控制台</h3>
+            <p>开服器里直接看控制台、输命令，不用再开黑窗口。启动停止一键切换。</p>
+        </div>
+        <div class="card">
+            <span class="tag">工具</span>
+            <h3>崩溃分析</h3>
+            <p>游戏崩了？把崩溃日志丢进去，自动告诉你是哪个模组搞的鬼、该怎么修。</p>
+        </div>
+        <div class="card">
+            <span class="tag">工具</span>
+            <h3>模组冲突检测</h3>
+            <p>扫一遍你的 mods 文件夹，重复模组、加载器不对、版本不兼容全给你揪出来。</p>
+        </div>
+        <div class="card">
+            <span class="tag">工具</span>
+            <h3>性能监控</h3>
+            <p>实时看内存占用、CPU 使用率，游戏卡不卡一目了然。</p>
+        </div>
+        <div class="card">
+            <span class="tag">工具</span>
+            <h3>Java 管理</h3>
+            <p>自动扫描电脑里的 Java，不同版本游戏用不同 Java，一键切换。</p>
+        </div>
+        <div class="card">
+            <span class="tag">工具</span>
+            <h3>存档管理</h3>
+            <p>备份、还原、删除存档，不用翻文件夹找。</p>
+        </div>
+        <div class="card">
+            <span class="tag">工具</span>
+            <h3>配置编辑</h3>
+            <p>直接在启动器里改模组配置文件，不用找路径、不用开记事本。</p>
+        </div>
+        <div class="card">
+            <span class="tag">下载</span>
+            <h3>高速下载</h3>
+            <p>多线程下载游戏和模组，比默认下载快不少，支持断点续传。</p>
+        </div>
+        <div class="card">
+            <span class="tag">资源</span>
+            <h3>资源包/光影/数据包</h3>
+            <p>三个页面分开管，启用禁用、排序、打开文件夹，都在启动器里完成。</p>
+        </div>
+        <div class="card">
+            <span class="tag">联机</span>
+            <h3>联机大厅</h3>
+            <p>内置联机功能，和朋友一起玩更方便。</p>
+        </div>
+        <div class="card">
+            <span class="tag">账号</span>
+            <h3>多账号管理</h3>
+            <p>支持离线账号和微软账号，多个账号切换着用。</p>
+        </div>
+    </div>
+</section>
+
+<section id="fun" class="fun-section">
+    <h2 class="sec-title">娱乐功能（重头戏）</h2>
+    <p style="text-align:center;color:#888;margin-bottom:36px;max-width:600px;margin-left:auto;margin-right:auto;">
+        谁说启动器只能用来开游戏？VoxelLauncher 里藏了不少好玩的东西，玩游戏之余还能玩点别的。
+    </p>
+    <div class="fun-grid">
+        <div class="fun-card">
+            <h3>🏆 成就系统</h3>
+            <p>用启动器也能解锁成就！首次启动游戏、下载第一个模组、开第一次服……各种操作都有对应成就，收集党狂喜。右上角随时看你的成就墙。</p>
+        </div>
+        <div class="fun-card">
+            <h3>⭐ 积分等级</h3>
+            <p>用得越多等级越高，启动游戏、下载模组、在线时长都能攒经验升级。Lv.15 只是起步，看看你能刷到多少级。积分还能在兑换里换东西。</p>
+        </div>
+        <div class="fun-card">
+            <h3>🎨 皮肤编辑器</h3>
+            <p>不用去网站上改皮肤了，启动器里直接画。支持经典版和纤细版，画完直接应用到游戏里，手残党也能折腾出专属皮肤。</p>
+        </div>
+        <div class="fun-card">
+            <h3>🤖 AI 助手</h3>
+            <p>内置 AI 聊天，游戏遇到问题直接问。怎么装模组、服务器怎么开、崩溃了怎么办，AI 都能给你讲明白，还能陪你唠嗑。</p>
+        </div>
+        <div class="fun-card">
+            <h3>👥 好友系统</h3>
+            <p>加好友、看好友在线状态、一键组队联机。不用再在 QQ 上问"你 IP 多少"，直接在启动器里拉人进服。</p>
+        </div>
+        <div class="fun-card">
+            <h3>🔊 趣味音效</h3>
+            <p>点击按钮、启动游戏、完成成就都有专属音效，用启动器也能有仪式感。听腻了还能换。</p>
+        </div>
+        <div class="fun-card">
+            <h3>📸 游戏截图</h3>
+            <p>工具页里直接管理游戏截图，不用去 .minecraft 里翻。好看的建筑、精彩的瞬间，一键查看一键分享。</p>
+        </div>
+        <div class="fun-card">
+            <h3>🎒 背包系统</h3>
+            <p>对，启动器里还有背包。各种活动给的道具、兑换的奖励都塞这里，说不定以后还能开盲盒。</p>
+        </div>
+    </div>
+</section>
+
+<section id="shots">
+    <h2 class="sec-title">界面长这样</h2>
+    <div class="shots">
+        <div class="shot">
+            <img src="images/screenshot1.png" alt="启动页面">
+            <div class="cap">启动页 — 选版本、填服务器、一键启动</div>
+        </div>
+        <div class="shot">
+            <img src="images/screenshot2.png" alt="Modrinth页面">
+            <div class="cap">Modrinth — 搜模组、下模组、自动装依赖</div>
+        </div>
+        <div class="shot">
+            <img src="images/screenshot3.png" alt="开服器页面">
+            <div class="cap">开服器 — 一键建服、控制台、复制地址</div>
+        </div>
+        <div class="shot">
+            <img src="images/screenshot4.png" alt="工具页面">
+            <div class="cap">工具箱 — 崩溃分析、模组检测、性能监控</div>
+        </div>
+    </div>
+</section>
+
+<section id="download">
+    <div class="dl-box">
+        <h2>下载 VoxelLauncher</h2>
+        <p>免费、开源、没广告<br>下载下来是个 exe，双击就能用，不用安装</p>
+        <a href="https://github.com/Blazar118/VoxelLauncher/releases/latest/download/VoxelLauncher.exe" class="btn">下载 VoxelLauncher.exe</a>
+        <div style="margin-top:20px;font-size:13px;color:#666;">
+            <a href="https://github.com/Blazar118/VoxelLauncher/releases" target="_blank" style="color:#7dd3fc;text-decoration:none;">查看历史版本</a>
+            &nbsp;·&nbsp;
+            <a href="https://github.com/Blazar118/VoxelLauncher" target="_blank" style="color:#7dd3fc;text-decoration:none;">GitHub 仓库</a>
+        </div>
+    </div>
+</section>
+
+<section>
+    <h2 class="sec-title">怎么用</h2>
+    <div class="steps">
+        <div class="step">
+            <div class="num">1</div>
+            <div>
+                <h4>下载并打开</h4>
+                <p>点上面的按钮下载 exe，下载完双击运行。第一次打开会自动初始化，等几秒就好。</p>
             </div>
         </div>
-    </nav>
-
-    <!-- 英雄区域 -->
-    <section class="hero">
-        <div class="hero-content">
-            <h1>VoxelLauncher</h1>
-            <p>一款功能强大、简洁易用的 Minecraft 第三方启动器<br>支持模组下载、一键开服、自动联机、崩溃分析等丰富功能</p>
-            <a href="#download" class="download-btn">⬇ 立即下载</a>
-            <div class="version-info">最新版本 v1.0.0 | 支持 Windows 10/11 | 大小约 44MB</div>
-        </div>
-    </section>
-
-    <!-- 功能特点 -->
-    <section class="features" id="features">
-        <h2 class="section-title"><span>功能特点</span></h2>
-        <div class="features-grid">
-            <div class="feature-card">
-                <div class="feature-icon">🎮</div>
-                <h3>一键启动游戏</h3>
-                <p>自动扫描 Java、自动校验游戏文件，一键启动 Minecraft。支持 Fabric、Forge 等多种加载器。</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">📦</div>
-                <h3>Modrinth 模组下载</h3>
-                <p>内置 Modrinth 搜索，一键下载模组，自动安装依赖，再也不用手动找前置模组了。</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">🖥️</div>
-                <h3>一键开服</h3>
-                <p>支持原版和 Fabric 服务端一键创建，自动同意 EULA，显示本机和外网连接地址。</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">🌐</div>
-                <h3>自动加入服务器</h3>
-                <p>填入服务器地址，启动游戏自动加入，不用再手动点多人游戏、添加服务器了。</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">🔍</div>
-                <h3>智能崩溃分析</h3>
-                <p>自动分析崩溃日志，识别常见崩溃原因，给出具体解决方案，小白也能看懂。</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">⚔️</div>
-                <h3>模组冲突检测</h3>
-                <p>深度检测模组冲突、重复模组、加载器不匹配等问题，让你的游戏更稳定。</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">👥</div>
-                <h3>好友系统</h3>
-                <p>内置好友功能，轻松管理你的游戏好友，联机更方便。</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">🎨</div>
-                <h3>皮肤编辑器</h3>
-                <p>内置皮肤编辑功能，自定义你的游戏角色，展示个性。</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">⚡</div>
-                <h3>高速下载</h3>
-                <p>支持多线程下载、断点续传，下载游戏和模组更快更稳定。</p>
+        <div class="step">
+            <div class="num">2</div>
+            <div>
+                <h4>添加账号</h4>
+                <p>启动页点"+离线"加个离线账号，或者点"微软登录"用正版账号。</p>
             </div>
         </div>
-    </section>
-
-    <!-- 界面预览 -->
-    <section class="screenshots" id="screenshots">
-        <div class="screenshots-container">
-            <h2 class="section-title"><span>界面预览</span></h2>
-            <div class="screenshot-grid">
-                <div class="screenshot-item">启动页面</div>
-                <div class="screenshot-item">模组下载页面</div>
-                <div class="screenshot-item">一键开服页面</div>
-                <div class="screenshot-item">工具页面</div>
+        <div class="step">
+            <div class="num">3</div>
+            <div>
+                <h4>选版本启动</h4>
+                <p>实例/版本那里选你想玩的版本，没有就去"版本下载"页下一个。选好点"启动游戏"。</p>
             </div>
         </div>
-    </section>
-
-    <!-- 下载区域 -->
-    <section class="download-section" id="download">
-        <div class="download-box">
-            <h2>立即下载</h2>
-            <p>免费、开源、无广告<br>下载后直接运行，无需安装</p>
-            <a href="https://github.com/Blazar118/VoxelLauncher/releases/latest/download/VoxelLauncher.exe" class="big-download-btn">
-                ⬇ 下载 VoxelLauncher.exe
-            </a>
-            <div class="download-links">
-                <a href="https://github.com/Blazar118/VoxelLauncher/releases" target="_blank">查看所有版本</a>
-                <a href="https://github.com/Blazar118/VoxelLauncher" target="_blank">GitHub 仓库</a>
+        <div class="step">
+            <div class="num">4</div>
+            <div>
+                <h4>装模组（可选）</h4>
+                <p>切到 Modrinth 页，搜你想要的模组，点"下载到当前实例"，依赖会自动装好。</p>
             </div>
         </div>
-    </section>
-
-    <!-- 使用说明 -->
-    <section class="guide" id="guide">
-        <h2 class="section-title"><span>使用说明</span></h2>
-        <div class="guide-steps">
-            <div class="step">
-                <div class="step-number">1</div>
-                <div class="step-content">
-                    <h3>下载启动器</h3>
-                    <p>点击上方下载按钮，下载 VoxelLauncher.exe。下载完成后直接双击运行，无需安装。</p>
-                </div>
-            </div>
-            <div class="step">
-                <div class="step-number">2</div>
-                <div class="step-content">
-                    <h3>选择游戏版本</h3>
-                    <p>在启动页面选择你想玩的 Minecraft 版本和加载器（Fabric/Forge），启动器会自动下载所需文件。</p>
-                </div>
-            </div>
-            <div class="step">
-                <div class="step-number">3</div>
-                <div class="step-content">
-                    <h3>下载模组</h3>
-                    <p>切换到 Modrinth 页面，搜索你想要的模组，点击"下载到当前实例"，依赖会自动安装。</p>
-                </div>
-            </div>
-            <div class="step">
-                <div class="step-number">4</div>
-                <div class="step-content">
-                    <h3>启动游戏</h3>
-                    <p>回到启动页面，点击"启动游戏"。如果想自动加入服务器，在自动加入输入框填入服务器地址即可。</p>
-                </div>
-            </div>
-            <div class="step">
-                <div class="step-number">5</div>
-                <div class="step-content">
-                    <h3>一键开服（可选）</h3>
-                    <p>切换到开服器页面，选择版本和类型，点击"下载并创建"，即可快速搭建自己的服务器。</p>
-                </div>
+        <div class="step">
+            <div class="num">5</div>
+            <div>
+                <h4>开服联机（可选）</h4>
+                <p>切到"开服器"页，选版本点"下载并创建"，启动后把地址发给朋友就能一起玩了。</p>
             </div>
         </div>
-    </section>
+    </div>
+</section>
 
-    <!-- 页脚 -->
-    <footer class="footer">
-        <p>VoxelLauncher © 2026 | 由 AI 辅助开发 | 开源免费</p>
-        <p style="margin-top: 10px;">
-            <a href="https://github.com/Blazar118/VoxelLauncher" target="_blank">GitHub</a> | 
-            <a href="https://github.com/Blazar118/VoxelLauncher/issues" target="_blank">反馈问题</a>
-        </p>
-    </footer>
+<footer>
+    <p>VoxelLauncher v2.1.0 · 由 Blazar118 开发 · 开源免费</p>
+    <p style="margin-top:8px;">
+        <a href="https://github.com/Blazar118/VoxelLauncher" target="_blank">GitHub</a>
+        ·
+        <a href="https://github.com/Blazar118/VoxelLauncher/issues" target="_blank">提建议/报 Bug</a>
+    </p>
+</footer>
 
-    <script>
-        // 平滑滚动
-        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-            anchor.addEventListener('click', function (e) {
-                e.preventDefault();
-                const target = document.querySelector(this.getAttribute('href'));
-                if (target) {
-                    target.scrollIntoView({ behavior: 'smooth' });
-                }
-            });
-        });
-    </script>
+<script>
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+        e.preventDefault();
+        const t = document.querySelector(a.getAttribute('href'));
+        if (t) t.scrollIntoView({ behavior: 'smooth' });
+    });
+});
+</script>
 </body>
 </html>

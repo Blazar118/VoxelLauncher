@@ -1724,6 +1724,7 @@ class VoxelApp:
                 quotes = self._VILLAGER_QUOTES
                 self._villager_hp = self._villager_max_hp  # 每次打开新村民满血
                 self._villager_angry = 0  # 新村民不生气
+                self._villager_scared = False  # 新村民不害怕
 
             win = tk.Toplevel(self.root)
             title = "🧳 流浪商人" if is_wandering else "🤝 村民交易"
@@ -1821,15 +1822,19 @@ class VoxelApp:
         discount = 1.0
         if not is_wandering and hasattr(self, '_villager_hp'):
             discount = self._get_villager_discount()
-        # 生气机制: 村民生气会涨价(原版MC行为)
+        # 生气/害怕机制: 血量<50%害怕求饶(降价), 否则生气涨价(原版MC行为)
         angry_mult = 1.0
+        scared_mult = 1.0
         if not is_wandering:
             angry_level = getattr(self, '_villager_angry', 0)
-            if angry_level == 1:
+            scared = getattr(self, '_villager_scared', False)
+            if scared:
+                scared_mult = 0.8   # 害怕: 再降20%求饶
+            elif angry_level == 1:
                 angry_mult = 1.5   # 生气: 涨价50%
             elif angry_level >= 2:
                 angry_mult = 2.0   # 暴怒: 涨价100%
-        price_factor = discount * angry_mult
+        price_factor = discount * angry_mult * scared_mult
         discounted_give = {}
         for k, v in give_items.items():
             discounted_give[k] = max(1, int(v * price_factor + 0.99))
@@ -1849,7 +1854,10 @@ class VoxelApp:
         text_color = "#ffffff" if is_wandering else "#333"
         price_text = ""
         angry_level = getattr(self, '_villager_angry', 0) if not is_wandering else 0
-        if angry_level == 1:
+        scared = getattr(self, '_villager_scared', False) if not is_wandering else False
+        if scared:
+            price_text = "  (😨 害怕了, 求饶降价!)"
+        elif angry_level == 1:
             price_text = "  (😠 生气了, 涨价50%!)"
         elif angry_level >= 2:
             price_text = "  (🤬 暴怒, 涨价100%!)"
@@ -1950,20 +1958,33 @@ class VoxelApp:
         # 更新血量条
         self._update_villager_hp_bar()
 
-        # ===== 生气机制: 有概率被打后涨价 =====
+        # ===== 生气/害怕机制: 血量<50%害怕求饶(降价), 否则有概率生气涨价 =====
         angry_level = getattr(self, '_villager_angry', 0)
-        roll = random.random()
-        if angry_level < 1 and roll < 0.30:
-            self._villager_angry = 1   # 30% 概率生气
-        elif angry_level == 1 and roll < 0.45:
-            self._villager_angry = 2   # 已生气时 45% 概率升级为暴怒
-        if angry_level == 0 and self._villager_angry == 1:
-            self._creeper_say("😠 村民生气了! 交易要涨价50%!", 2200)
-        elif self._villager_angry == 2 and angry_level < 2:
-            self._creeper_say("🤬 村民暴怒了! 价格翻倍!", 2200)
+        hp_ratio = max(0, self._villager_hp / self._villager_max_hp)
+        if hp_ratio < 0.5:
+            # 血量低于50%: 村民害怕了, 不再生气, 转而求饶降价
+            was_scared = getattr(self, '_villager_scared', False)
+            self._villager_scared = True
+            self._villager_angry = 0
+            if not was_scared:
+                self._creeper_say("😨 村民被你打怕了! 求饶降价!", 2200)
+        else:
+            # 血量>=50%: 保持原生气机制
+            roll = random.random()
+            if angry_level < 1 and roll < 0.30:
+                self._villager_angry = 1   # 30% 概率生气
+            elif angry_level == 1 and roll < 0.45:
+                self._villager_angry = 2   # 已生气时 45% 概率升级为暴怒
+            if angry_level == 0 and self._villager_angry == 1:
+                self._creeper_say("😠 村民生气了! 交易要涨价50%!", 2200)
+            elif self._villager_angry == 2 and angry_level < 2:
+                self._creeper_say("🤬 村民暴怒了! 价格翻倍!", 2200)
 
-        # 村民被打说话(生气时说气话)
-        if self._villager_angry >= 1:
+        # 村民被打说话(害怕/生气时各有台词)
+        if getattr(self, '_villager_scared', False):
+            scared_quotes = ["别杀我！", "求求你别打了！", "我什么都给你！", "饶命啊我好怕！", "呜呜呜...", "好东西都给你！"]
+            self._villager_quote_label.config(text=random.choice(scared_quotes), fg="#aaddff")
+        elif self._villager_angry >= 1:
             angry_quotes = ["气死我了！", "你等着！", "涨价了！", "哼！不给你便宜！", "我记住你了！"]
             self._villager_quote_label.config(text=random.choice(angry_quotes), fg="#ff5555")
         else:
@@ -4934,6 +4955,7 @@ class VoxelApp:
         self._villager_hp = 100
         self._villager_max_hp = 100
         self._villager_angry = 0  # 0=正常 1=生气(涨价) 2=暴怒(大幅涨价)
+        self._villager_scared = False  # 害怕状态(血量<50%时触发, 求饶降价)
         self._chest = self._load_chest()
         self._update_chest_count()
         self._current_ore = None

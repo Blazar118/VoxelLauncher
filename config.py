@@ -31,6 +31,7 @@ DEFAULTS = {
     "width": 854,                          # 游戏分辨率宽
     "height": 480,                         # 游戏分辨率高
     "window_geometry": None,               # 主窗口位置(可选)
+    "proxy": "",                          # 手动代理地址(如 http://127.0.0.1:7890), 留空自动探测
 }
 
 

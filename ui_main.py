@@ -3021,6 +3021,14 @@ class VoxelApp:
         self.theme_combo.bind("<<ComboboxSelected>>", self._on_theme_selected)
         ttk.Label(row_theme, text="(选择后立即生效, 可在启动页看到效果)", foreground="#888").pack(side="left")
 
+        row_proxy = ttk.Frame(box)
+        row_proxy.pack(fill="x", padx=6, pady=3)
+        ttk.Label(row_proxy, text="代理(加速器):").pack(side="left")
+        self.setting_proxy = ttk.Entry(row_proxy, width=30)
+        self.setting_proxy.pack(side="left", padx=4)
+        self.setting_proxy.insert(0, CONFIG.get("proxy") or "")
+        ttk.Label(row_proxy, text="留空自动探测 (如 http://127.0.0.1:7890)", foreground="#888").pack(side="left")
+
         row_bridge = ttk.Frame(box)
         row_bridge.pack(fill="x", padx=6, pady=3)
         self.bridge_var = tk.BooleanVar(value=CONFIG.get("bridge_enabled", False))
@@ -6837,6 +6845,9 @@ class VoxelApp:
         # 保存主题
         if hasattr(self, "theme_var"):
             CONFIG.set("theme", self.theme_var.get())
+        # 保存代理
+        if hasattr(self, "setting_proxy"):
+            CONFIG.set("proxy", self.setting_proxy.get().strip())
         self._apply_launch_background()
         # 保存联动开关
         CONFIG.set("bridge_enabled", self.bridge_var.get())
@@ -10281,8 +10292,6 @@ A: 下载后进入游戏 -> 选项 -> 资源包 -> 选中启用
                    command=lambda: self.nb.select(self.tab_fun)).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="🔄 检查更新",
                    command=self._check_update_now).pack(side="left", padx=5)
-        ttk.Button(btn_frame, text="🎁 彩蛋",
-                   command=self._egg_toggle).pack(side="left", padx=5)
 
     def _build_friends_tab(self):
         """联机中心: 局域网扫描 + 服务器收藏 + 邀请码 + 好友"""
@@ -10963,26 +10972,13 @@ A: 下载后进入游戏 -> 选项 -> 资源包 -> 选中启用
                 pass
         threading.Thread(target=_work, daemon=True).start()
 
-    def _egg_toggle(self):
-        """彩蛋按钮: 直接弹出一个彩蛋"""
-        import random
-        eggs = [
-            "你知道吗? 这个启动器是 AI 帮忙开发的 😎",
-            "彩蛋: 试着快速点 10 下标题 'VoxelLauncher' 试试!",
-            "彩蛋: 切换主题到 '苦力怕绿', 有惊喜哦",
-            "提示: 在启动页点版本号 5 次可以解锁隐藏功能",
-            "VoxelLauncher v" + version.VERSION + " 祝你挖矿愉快! ⛏",
-        ]
-        messagebox.showinfo("🎉 彩蛋", random.choice(eggs))
 
     def _on_about_title_click(self, event=None):
-        """点击关于页标题10次触发彩蛋"""
+        """隐蔽彩蛋: 连点标题10次触发(不留任何提示, 靠玩家自己发现)"""
         self._about_click_count += 1
         if self._about_click_count >= 10:
             self._about_click_count = 0
-            self._show_egg("超级彩蛋")
-        elif self._about_click_count == 5:
-            self._post("status", "再点 " + str(10 - self._about_click_count) + " 次标题有惊喜...")
+            self._show_egg("隐藏成就解锁")
 
     def _show_egg(self, title):
         """显示彩蛋"""

@@ -5619,7 +5619,7 @@ class VoxelApp:
         messagebox.showinfo("已复制", "今日人品已复制到剪贴板:\n" + text)
 
     def _open_card_draw(self):
-        """命运卡抽卡窗口(人品影响稀有度, 收集图鉴)"""
+        """命运卡抽卡窗口(人品影响稀有度, 收集图鉴, 可发到游戏)"""
         try:
             import fun_stuff
             import points
@@ -5630,7 +5630,7 @@ class VoxelApp:
         luck_name, luck_color = fun_stuff.luck_level(luck)
         win = tk.Toplevel(self.root)
         win.title("命运卡抽卡")
-        win.geometry("460x560")
+        win.geometry("460x600")
         win.transient(self.root)
         # 顶部: 今日人品
         tk.Label(win, text="今日人品: {} ({})".format(luck, luck_name),
@@ -5641,13 +5641,17 @@ class VoxelApp:
         card_frame.pack(pady=10)
         self._card_display = tk.Label(card_frame,
                                       text="点击下方抽卡", font=("Arial", 16, "bold"),
-                                      fg="#999", bg="#f5f5f5", width=32, height=5,
+                                      fg="#999", bg="#f5f5f5", width=32, height=4,
                                       relief="solid", bd=2, wraplength=380)
         self._card_display.pack()
         self._card_sub = tk.Label(card_frame, text="", fg="#888",
                                   font=("Arial", 10), justify="center",
                                   wraplength=380)
-        self._card_sub.pack(pady=6)
+        self._card_sub.pack(pady=4)
+        # 背包提示(抽到的物品)
+        self._card_inv = tk.Label(win, text="", fg="#2e8b57",
+                                  font=("Arial", 10, "bold"))
+        self._card_inv.pack(pady=2)
         # 收集进度
         collected = fun_stuff.get_collected()
         self._card_progress = tk.Label(
@@ -5664,6 +5668,11 @@ class VoxelApp:
 
         _refresh_left()
 
+        # 发送到游戏按钮(默认禁用, 抽到卡后可用)
+        send_btn = ttk.Button(win, text="🎮 发送到游戏", state="disabled",
+                              command=lambda: self._send_card_to_game())
+        send_btn.pack(pady=4)
+
         def _do_draw():
             remaining = fun_stuff.get_remaining_free_draws()
             if remaining <= 0:
@@ -5679,15 +5688,32 @@ class VoxelApp:
             else:
                 fun_stuff.consume_draw()
             card, rarity = fun_stuff.draw_card(luck)
+            card_id, card_name = card[0], card[1]
             rar_name = fun_stuff.RARITY_NAMES[rarity]
             rar_color = fun_stuff.RARITY_COLORS[rarity]
-            is_new, total, allc = fun_stuff.collect_card(card[0])
+            desc = card[3]
+            mc_id, count = card[4], card[5]
+            is_new, total, allc = fun_stuff.collect_card(card_id)
             tag = "✨ 新卡!" if is_new else "(重复)"
-            self._card_display.config(text=card[1], fg=rar_color,
+            self._card_display.config(text=card_name, fg=rar_color,
                                       bg="#fffbe6" if rarity >= 3 else "#f5f5f5")
             self._card_sub.config(
-                text="[{}]  {}\n\n{}".format(rar_name, tag, card[3]),
+                text="[{}]  {}\n\n{}".format(rar_name, tag, desc),
                 fg=rar_color)
+            # 物品自动进启动器背包
+            try:
+                self.player.add_item(mc_id, count)
+                self._card_inv.config(
+                    text="🎒 已放入背包: {} x{}".format(
+                        fun_stuff.item_name(mc_id), count))
+            except Exception:
+                self._card_inv.config(text="")
+            # 更新发送到游戏按钮
+            self._card_current_id = mc_id
+            self._card_current_count = count
+            send_btn.config(state="normal",
+                            text="🎮 发送到游戏 ({} x{})".format(
+                                fun_stuff.item_name(mc_id), count))
             self._card_progress.config(text="图鉴: {}/{}".format(total, allc))
             _refresh_left()
             if total >= allc:
@@ -5712,9 +5738,43 @@ class VoxelApp:
         ttk.Button(win, text="📋 复制今日人品",
                    command=lambda: self._copy_luck(luck, luck_name)).pack(pady=2)
         tk.Label(win, text="人品越高, 出稀有/传说卡的概率越高\n"
-                           "每天免费 {} 次, 之后每次 {} 积分".format(
+                           "每天免费 {} 次, 之后每次 {} 积分\n"
+                           "抽到的物品自动进背包, 可一键发送到游戏".format(
                                fun_stuff.FREE_DRAWS_PER_DAY, fun_stuff.CARD_COST),
                  fg="#999", font=("Arial", 8)).pack(pady=6)
+
+    def _send_card_to_game(self):
+        """把抽到的命运卡物品实时发送到游戏(需开启游戏联动并进入游戏)"""
+        try:
+            import fun_stuff
+            import bridge
+        except Exception as exc:
+            messagebox.showerror("错误", str(exc))
+            return
+        if not CONFIG.get("bridge_enabled", False):
+            messagebox.showwarning("提示", "请先在设置里开启「游戏联动」开关")
+            return
+        if not bridge.is_bridge_running():
+            messagebox.showwarning("提示", "未检测到游戏联动 Mod。\n请先启动游戏并进入世界。")
+            return
+        mc_id = getattr(self, "_card_current_id", None)
+        if not mc_id:
+            messagebox.showinfo("提示", "还没抽到卡, 先抽一张吧")
+            return
+        count = getattr(self, "_card_current_count", 1)
+        ok, msg = bridge.send_item(mc_id, count)
+        if ok:
+            # 已成功发送, 从启动器背包移除
+            try:
+                self.player.remove_item(mc_id, count)
+            except Exception:
+                pass
+            messagebox.showinfo("发送成功", msg + "\n已从启动器背包移除")
+            self._card_inv.config(
+                text="🎮 已发送到游戏: {} x{}".format(
+                    fun_stuff.item_name(mc_id), count))
+        else:
+            messagebox.showerror("发送失败", msg)
 
     def _open_week_report(self):
         """游戏周报窗口(本周时长 + 梗文案 + 复制分享)"""

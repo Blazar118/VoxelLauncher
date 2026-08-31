@@ -91,31 +91,76 @@ def luck_saying(value):
 # ------------------------------------------------------------------
 # 命运卡
 # ------------------------------------------------------------------
-# (id, 名称, 稀有度 0普通/1稀有/2史诗/3传说, 描述)
+# (id, 名称, 稀有度 0普通/1稀有/2史诗/3传说, 描述, mc物品id, 数量)
 CARDS = [
     # 普通
-    ("card_stone", "石头的心事", 0, "你掉的只是一块石头, 别难过"),
-    ("card_creeper", "苦力怕路过", 0, "今天别站太近, 你知道我说的是谁"),
-    ("card_piglin", "猪灵的凝视", 0, "金锭带够了再进下界"),
-    ("card_villager", "村民的凝视", 0, "今天的交易, 可能不太划算"),
-    ("card_wood", "木剑传说", 0, "用木剑也能打僵尸, 大概"),
-    ("card_cave", "塌方警告", 0, "挖矿记得带火把, 别问为什么"),
+    ("card_stone", "石头的心事", 0, "你掉的只是一块石头, 别难过",
+     "minecraft:stone", 8),
+    ("card_creeper", "苦力怕路过", 0, "今天别站太近, 你知道我说的是谁",
+     "minecraft:creeper_head", 1),
+    ("card_piglin", "猪灵的凝视", 0, "金锭带够了再进下界",
+     "minecraft:gold_ingot", 4),
+    ("card_villager", "村民的凝视", 0, "今天的交易, 可能不太划算",
+     "minecraft:emerald", 3),
+    ("card_wood", "木剑传说", 0, "用木剑也能打僵尸, 大概",
+     "minecraft:wooden_sword", 1),
+    ("card_cave", "塌方警告", 0, "挖矿记得带火把, 别问为什么",
+     "minecraft:torch", 16),
     # 稀有
-    ("card_diamond", "钻石的呼唤", 1, "今天适合挖矿, 钻石在等你"),
-    ("card_pearl", "末影珍珠", 1, "瞬移不一定成功, 但一定要帅"),
-    ("card_xp", "附魔之瓶", 1, "经验值+5, 附魔台在召唤"),
-    ("card_gapple", "金苹果", 1, "关键时刻能救命的好东西"),
-    ("card_blaze", "烈焰火花", 1, "今天的你, 火力全开"),
+    ("card_diamond", "钻石的呼唤", 1, "今天适合挖矿, 钻石在等你",
+     "minecraft:diamond", 2),
+    ("card_pearl", "末影珍珠", 1, "瞬移不一定成功, 但一定要帅",
+     "minecraft:ender_pearl", 2),
+    ("card_xp", "附魔之瓶", 1, "经验值+5, 附魔台在召唤",
+     "minecraft:experience_bottle", 4),
+    ("card_gapple", "金苹果", 1, "关键时刻能救命的好东西",
+     "minecraft:golden_apple", 1),
+    ("card_blaze", "烈焰火花", 1, "今天的你, 火力全开",
+     "minecraft:blaze_powder", 4),
     # 史诗
-    ("card_netherite", "下界合金之心", 2, "坚不可摧, 说的就是今天的你"),
-    ("card_beacon", "信标之光", 2, "你的目标, 全图可见"),
-    ("card_elytra", "鞘翅飞行", 2, "今天适合起飞, 摔不死算我的"),
-    ("card_dragon", "末影龙之息", 2, "连末影龙都要忌惮你三分"),
+    ("card_netherite", "下界合金之心", 2, "坚不可摧, 说的就是今天的你",
+     "minecraft:netherite_ingot", 1),
+    ("card_beacon", "信标之光", 2, "你的目标, 全图可见",
+     "minecraft:beacon", 1),
+    ("card_elytra", "鞘翅飞行", 2, "今天适合起飞, 摔不死算我的",
+     "minecraft:elytra", 1),
+    ("card_dragon", "末影龙之息", 2, "连末影龙都要忌惮你三分",
+     "minecraft:dragon_breath", 3),
     # 传说
-    ("card_notch", "Notch 的祝福", 3, "创世神今天看着你, 做什么都会成功"),
-    ("card_ancient", "远古之眼", 3, "你看到了别人看不到的宝藏"),
-    ("card_seed", "世界之种", 3, "整个世界的运气都站在你这边"),
+    ("card_notch", "Notch 的祝福", 3, "创世神今天看着你, 做什么都会成功",
+     "minecraft:enchanted_golden_apple", 1),
+    ("card_ancient", "远古之眼", 3, "你看到了别人看不到的宝藏",
+     "minecraft:ender_eye", 2),
+    ("card_seed", "世界之种", 3, "整个世界的运气都站在你这边",
+     "minecraft:book", 1),
 ]
+
+# MC 物品中文名(用于背包/发送显示)
+ITEM_NAMES = {
+    "minecraft:stone": "石头",
+    "minecraft:creeper_head": "苦力怕头",
+    "minecraft:gold_ingot": "金锭",
+    "minecraft:emerald": "绿宝石",
+    "minecraft:wooden_sword": "木剑",
+    "minecraft:torch": "火把",
+    "minecraft:diamond": "钻石",
+    "minecraft:ender_pearl": "末影珍珠",
+    "minecraft:experience_bottle": "附魔之瓶",
+    "minecraft:golden_apple": "金苹果",
+    "minecraft:blaze_powder": "烈焰粉",
+    "minecraft:netherite_ingot": "下界合金锭",
+    "minecraft:beacon": "信标",
+    "minecraft:elytra": "鞘翅",
+    "minecraft:dragon_breath": "龙息",
+    "minecraft:enchanted_golden_apple": "附魔金苹果",
+    "minecraft:ender_eye": "末影之眼",
+    "minecraft:book": "书",
+}
+
+
+def item_name(mc_id):
+    """MC物品中文名"""
+    return ITEM_NAMES.get(mc_id, mc_id.split(":")[-1])
 
 RARITY_NAMES = ["普通", "稀有", "史诗", "传说"]
 RARITY_COLORS = ["#9e9e9e", "#2196f3", "#9c27b0", "#ff9800"]

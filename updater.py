@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-VoxelLauncher - 自动更新模块(支持加速器代理)
+VoxelLauncher - 自动更新模块(支持 HTTP/Socks5 加速器代理)
 - 启动时后台检查 GitHub 最新 Release
 - 与本地版本号对比, 有新版则提示一键更新
 - 下载新版 exe 并替换当前程序
 
 网络策略(自动适配加速器):
-  1. 读取 Windows 系统代理(注册表)  -- 加速器常设在这里
-  2. 探测常见本地代理端口(Clash/v2ray/SS 等)
-  3. 读取环境变量 HTTP_PROXY / HTTPS_PROXY
-  4. 全部失败则直连
+  1. 读取启动器设置页手动配置的代理(支持 http/https/socks5)
+  2. 读取 Windows 系统代理(注册表)
+  3. 探测常见本地代理端口(Clash/v2ray/SS/Watt Toolkit 等)
+  4. 读取环境变量 HTTP_PROXY / HTTPS_PROXY
+  5. 全部失败则直连
 """
 import os
 import re
@@ -22,13 +23,20 @@ import time
 
 import requests
 
+# Socks5 支持(可选, 未安装则回退)
+try:
+    import socks  # noqa: F401
+    _HAS_SOCKS = True
+except ImportError:
+    _HAS_SOCKS = False
+
 import version
 
 
 # ---------------------------------------------------------------
 # 代理探测
 # ---------------------------------------------------------------
-# 常见代理端口: Clash(7890/7897), v2rayN(10809), SS(1080), 其他
+# 常见代理端口: Clash(7890/7897), v2rayN(10809), SS(1080), Watt Toolkit 等
 _PROXY_PORTS = [7890, 7897, 7891, 10809, 10808, 1080, 8888, 2080, 1087, 4780]
 
 
@@ -43,7 +51,7 @@ def _read_system_proxy():
         server, _ = winreg.QueryValueEx(key, "ProxyServer")
         winreg.CloseKey(key)
         if enabled and server:
-            if not server.startswith("http"):
+            if not server.startswith(("http", "socks")):
                 server = "http://" + server
             return server
     except Exception:
@@ -52,11 +60,17 @@ def _read_system_proxy():
 
 
 def _probe_local_proxy():
-    """探测常见本地代理端口是否开放"""
+    """
+    探测常见本地代理端口是否开放。
+    Watt Toolkit/Clash 等常为 Socks5, 已知端口默认按 socks5 返回。
+    """
     for port in _PROXY_PORTS:
         try:
             s = socket.create_connection(("127.0.0.1", port), timeout=0.3)
             s.close()
+            # Watt Toolkit 二级代理默认 Socks5, 常见端口优先 socks5
+            if _HAS_SOCKS:
+                return "socks5://127.0.0.1:{}".format(port)
             return "http://127.0.0.1:{}".format(port)
         except Exception:
             continue
@@ -72,20 +86,38 @@ def _env_proxy():
     return None
 
 
-def _detect_proxy():
-    """按优先级探测可用代理"""
-    # 1. 启动器设置页手动配置的代理(最优先)
+def _manual_proxy():
+    """读取启动器设置页手动配置的代理"""
     try:
         from config import CONFIG
         manual = CONFIG.get("proxy") or ""
         manual = manual.strip()
-        if manual:
-            if not manual.startswith(("http://", "https://", "socks")):
+        if not manual:
+            return None
+        # 无协议前缀时智能判断
+        if not manual.startswith(("http://", "https://", "socks5://", "socks4://", "socks://")):
+            # 常见 Socks5 端口默认按 socks5 处理, 其余按 http
+            port = None
+            try:
+                port = int(manual.rsplit(":", 1)[1])
+            except Exception:
+                port = None
+            if port in _PROXY_PORTS:
+                manual = "socks5://" + manual
+            else:
                 manual = "http://" + manual
-            return manual
+        return manual
     except Exception:
-        pass
-    # 2. 环境变量(用户手动配置过优先)
+        return None
+
+
+def _detect_proxy():
+    """按优先级探测可用代理"""
+    # 1. 启动器设置页手动配置(最优先)
+    p = _manual_proxy()
+    if p:
+        return p
+    # 2. 环境变量
     p = _env_proxy()
     if p:
         return p
@@ -108,25 +140,21 @@ def _proxies_dict(proxy):
 
 def _http_get(url, timeout=10, stream=False):
     """
-    智能请求: 优先走探测到的代理, 失败则直连。
-    返回 requests.Response 或抛异常。
+    智能请求: 优先直连(Watt Toolkit 等透明代理可通过 hosts+443 自动接管),
+    直连失败再尝试显式代理。返回 requests.Response 或抛异常。
     """
-    proxy = _detect_proxy()
-    proxies = _proxies_dict(proxy)
-    last_err = None
-    if proxies:
-        try:
-            return requests.get(url, timeout=timeout, stream=stream,
-                                proxies=proxies)
-        except Exception as e:
-            last_err = e
-    # 直连兜底
+    # 1. 先直连(透明代理场景下 hosts 指向 127.0.0.1, 由本机 443/80 服务接管)
     try:
         return requests.get(url, timeout=timeout, stream=stream)
-    except Exception as e:
-        if last_err:
-            raise last_err
-        raise e
+    except Exception:
+        pass
+    # 2. 显式代理兜底
+    proxy = _detect_proxy()
+    proxies = _proxies_dict(proxy)
+    if proxies:
+        return requests.get(url, timeout=timeout, stream=stream, proxies=proxies)
+    # 3. 重新直连并抛出原始错误
+    return requests.get(url, timeout=timeout, stream=stream)
 
 
 def get_latest_version():
@@ -136,7 +164,7 @@ def get_latest_version():
     """
     api = "https://api.github.com/repos/{}/releases/latest".format(version.GITHUB_REPO)
     try:
-        r = _http_get(api, timeout=10)
+        r = _http_get(api, timeout=12)
         if r.status_code != 200:
             return None, None
         data = r.json()
@@ -180,17 +208,21 @@ def check_for_update():
 
 def download_update(url, dest_path, progress_cb=None):
     """
-    流式下载新版 exe 到指定路径(自动走代理)。
+    流式下载新版 exe 到指定路径。
+    优先直连(Watt Toolkit 透明代理接管), 失败再走显式代理。
     progress_cb(current, total) 用于显示进度。
     返回 (ok, error_msg)
     """
     proxy = _detect_proxy()
     proxies = _proxies_dict(proxy)
     try:
-        if proxies:
-            r = requests.get(url, stream=True, timeout=30, proxies=proxies)
-        else:
-            r = requests.get(url, stream=True, timeout=30)
+        # 先直连
+        try:
+            r = requests.get(url, stream=True, timeout=40)
+        except Exception:
+            if not proxies:
+                raise
+            r = requests.get(url, stream=True, timeout=40, proxies=proxies)
         r.raise_for_status()
         total = int(r.headers.get("content-length", 0))
         done = 0

@@ -3027,7 +3027,7 @@ class VoxelApp:
         self.setting_proxy = ttk.Entry(row_proxy, width=30)
         self.setting_proxy.pack(side="left", padx=4)
         self.setting_proxy.insert(0, CONFIG.get("proxy") or "")
-        ttk.Label(row_proxy, text="留空自动探测 (如 http://127.0.0.1:7890)", foreground="#888").pack(side="left")
+        ttk.Label(row_proxy, text="一般留空即可(加速器自动接管), 仅当直连失败时填写", foreground="#888").pack(side="left")
 
         row_bridge = ttk.Frame(box)
         row_bridge.pack(fill="x", padx=6, pady=3)

@@ -34,6 +34,8 @@ import modrinth
 import mod_manager
 import curseforge
 import sounds
+import skin_editor
+import multiplayer
 from PIL import Image, ImageTk
 
 # 尝试加载可选拖拽支持(第三方, 非必须)
@@ -399,6 +401,8 @@ class VoxelApp:
         self._apply_log_visibility(show_log)
 
         # 初始加载
+        self.modrinth_results = []
+        self.mr_selected_idx = -1
         self._reload_accounts()
         self._reload_instances()
         self.refresh_java()
@@ -427,7 +431,10 @@ class VoxelApp:
         self.tab_combat = ttk.Frame(self.nb)  # 战斗页: 怪物/武器/指令
         self.tab_downloader = ttk.Frame(self.nb)  # 高速下载器页
         self.tab_tools = ttk.Frame(self.nb)  # 工具页
+        self.tab_multiplayer = ttk.Frame(self.nb)  # 联机页
+        self.tab_server = ttk.Frame(self.nb)  # 开服器页
         self.tab_about = ttk.Frame(self.nb)  # 关于页
+        self.tab_friends = ttk.Frame(self.nb)  # 好友页
 
         self.nb.add(self.tab_launch, text=" 启动 ")
         self.nb.add(self.tab_versions, text=" 版本下载 ")
@@ -442,7 +449,10 @@ class VoxelApp:
         self.nb.add(self.tab_combat, text=" ⚔️ 战斗 ")
         self.nb.add(self.tab_downloader, text=" ⚡ 高速下载 ")
         self.nb.add(self.tab_tools, text=" 🔧 工具 ")
+        self.nb.add(self.tab_multiplayer, text=" 🌐 联机 ")
+        self.nb.add(self.tab_server, text=" 🖥 开服器 ")
         self.nb.add(self.tab_about, text=" ℹ 关于 ")
+        self.nb.add(self.tab_friends, text=" 👥 好友 ")
 
         self._build_launch_tab()
         self._build_versions_tab()
@@ -460,7 +470,14 @@ class VoxelApp:
         self._build_packs_tab()
         self._build_downloader_tab()
         self._build_tools_tab()
+        self._build_multiplayer_tab()
+        self._build_server_tab()
+        self._build_services_tab()
         self._build_about_tab()
+        self._build_friends_tab()
+
+        # 刷新积分显示
+        self.root.after(1000, self._refresh_points)
 
         # 根据是否配置 CurseForge 密钥决定该页是否显示
         self._apply_cf_tab()
@@ -576,6 +593,21 @@ class VoxelApp:
                                   width=7)
         self.max_mem.pack(side="left")
 
+        # 自动加入服务器
+        box_server = ttk.LabelFrame(f, text="自动加入服务器 (不填则正常启动)")
+        box_server.pack(fill="x", padx=8, pady=(0, 4))
+        server_row = ttk.Frame(box_server)
+        server_row.pack(fill="x", padx=6, pady=4)
+        ttk.Label(server_row, text="服务器地址:").pack(side="left")
+        self.auto_join_server_var = tk.StringVar()
+        self.auto_join_server_entry = ttk.Entry(server_row,
+            textvariable=self.auto_join_server_var, width=30)
+        self.auto_join_server_entry.pack(side="left", padx=5)
+        ttk.Label(server_row, text="(格式: IP 或 IP:端口, 如 mc.hypixel.net)",
+                  foreground="#888").pack(side="left")
+        ttk.Button(server_row, text="清除",
+                   command=lambda: self.auto_join_server_var.set("")).pack(side="left", padx=5)
+
         # 启动区
         box4 = ttk.Frame(f)
         box4.pack(fill="x", padx=8, pady=6)
@@ -584,6 +616,8 @@ class VoxelApp:
         self.launch_btn.pack(side="left")
         ttk.Button(box4, text="导出启动脚本",
                    command=self._export_script).pack(side="left", padx=6)
+        ttk.Button(box4, text="📁 打开实例文件夹",
+                   command=self._open_instance_folder).pack(side="left", padx=6)
         ttk.Button(box4, text="🏆 成就",
                    command=self._show_achievements, width=8).pack(side="left", padx=2)
         self.stop_btn = ttk.Button(box4, text="停止", command=self._stop_game,
@@ -629,6 +663,9 @@ class VoxelApp:
         self._xp_label = tk.Label(status_row, text="⭐ Lv.0 (0/10)", bg="#e0e0e0",
                                    font=("Arial", 10, "bold"), fg="#00aa00")
         self._xp_label.pack(side="left", padx=10)
+        self._points_label = tk.Label(status_row, text="💰 0 积分", bg="#e0e0e0",
+                                       font=("Arial", 10, "bold"), fg="#ff8800")
+        self._points_label.pack(side="left", padx=10)
         # 第二行: 功能按钮
         btn_row = tk.Frame(self._fun_status_bar, bg="#e0e0e0")
         btn_row.pack(fill="x", pady=(2, 4))
@@ -650,6 +687,10 @@ class VoxelApp:
                    command=self._open_farming).pack(side="left", padx=3)
         ttk.Button(btn_row, text="⚒ 合成",
                    command=self._open_crafting).pack(side="left", padx=3)
+        ttk.Button(btn_row, text="🎨 皮肤编辑器",
+                   command=self._open_skin_editor).pack(side="left", padx=3)
+        ttk.Button(btn_row, text="🎁 积分兑换",
+                   command=self._open_points_shop).pack(side="left", padx=3)
 
         # 天气效果 Canvas(雨/雪/闪电动画)
         self._weather_canvas = tk.Canvas(f, height=80, bg="#87ceeb",
@@ -1026,30 +1067,50 @@ class VoxelApp:
         "netherite": {"name": "下界合金镐", "tex": "netherite_pickaxe", "efficiency": 4.0, "durability": 1000, "cost": {}},
     }
 
+    def _save_json_safe(self, path, data):
+        """安全保存JSON: 先写临时文件再替换, 防止写入中断导致文件变空"""
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp_path = path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            # 替换原文件 (Windows 下 os.replace 是原子操作)
+            if os.path.exists(path):
+                os.remove(path)
+            os.rename(tmp_path, path)
+            return True
+        except Exception:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except Exception:
+                pass
+            return False
+
+    def _load_json_safe(self, path, default):
+        """安全加载JSON: 检查文件是否存在且非空"""
+        try:
+            if os.path.exists(path) and os.path.getsize(path) > 0:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return default
+
     def _pickaxe_file(self):
         return os.path.join(os.environ.get("APPDATA", "."),
                             "VoxelLauncher", "pickaxe.json")
 
     def _load_pickaxe(self):
         """加载镐子数据"""
-        try:
-            path = self._pickaxe_file()
-            if os.path.exists(path):
-                with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-        except Exception:
-            pass
-        return {"type": "wood", "durability": 999999}
+        return self._load_json_safe(self._pickaxe_file(),
+                                    {"type": "wood", "durability": 999999})
 
     def _save_pickaxe(self):
         """保存镐子数据"""
-        try:
-            path = self._pickaxe_file()
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(self._pickaxe, f)
-        except Exception:
-            pass
+        self._save_json_safe(self._pickaxe_file(), self._pickaxe)
 
     def _update_pickaxe_label(self):
         """更新镐子显示(用游戏贴图)"""
@@ -1262,6 +1323,15 @@ class VoxelApp:
         self._creeper_say("⚒ 锻造出了下界合金镐！最强镐子！", 3000)
         self._unlock_achievement("netherite_pickaxe")
         smith_win.destroy()
+
+    def _open_skin_editor(self):
+        """打开皮肤编辑器"""
+        try:
+            game_dir = CONFIG.get("game_dir")
+            skin_editor.open_skin_editor(self.root, game_dir=game_dir)
+            self._log("已打开皮肤编辑器")
+        except Exception as e:
+            self._log(f"打开皮肤编辑器失败: {e}")
 
     # ---------------- 熔炉/高炉系统 ----------------
     # 可烧炼配方: 输入→输出, 高炉专用标记
@@ -2004,11 +2074,24 @@ class VoxelApp:
 
         mid = ttk.Frame(f)
         mid.pack(fill="both", expand=True, padx=8, pady=2)
-        self.mr_list = tk.Listbox(mid)
-        self.mr_list.pack(side="left", fill="both", expand=True)
-        sb = ttk.Scrollbar(mid, command=self.mr_list.yview)
+        # 带图标的 Treeview 列表
+        cols = ("name", "type", "downloads")
+        self.mr_tree = ttk.Treeview(mid, columns=cols, show="tree headings",
+                                    height=15, selectmode="browse")
+        self.mr_tree.heading("#0", text="图标")
+        self.mr_tree.heading("name", text="模组名称")
+        self.mr_tree.heading("type", text="类型")
+        self.mr_tree.heading("downloads", text="下载量")
+        self.mr_tree.column("#0", width=50, anchor="center")
+        self.mr_tree.column("name", width=250, anchor="w")
+        self.mr_tree.column("type", width=80, anchor="center")
+        self.mr_tree.column("downloads", width=100, anchor="e")
+        self.mr_tree.pack(side="left", fill="both", expand=True)
+        sb = ttk.Scrollbar(mid, command=self.mr_tree.yview)
         sb.pack(side="right", fill="y")
-        self.mr_list.configure(yscrollcommand=sb.set)
+        self.mr_tree.configure(yscrollcommand=sb.set)
+        self.mr_tree.bind("<<TreeviewSelect>>", lambda e: self._mr_on_select())
+        self.mr_icon_images = {}
 
         bottom = ttk.Frame(f)
         bottom.pack(fill="x", padx=8, pady=4)
@@ -2018,6 +2101,21 @@ class VoxelApp:
                    command=self._import_mrpack).pack(side="left", padx=4)
         self.mr_status = ttk.Label(f, text="")
         self.mr_status.pack(fill="x", padx=8, pady=2)
+
+        # 第一次切换到 Modrinth 标签页时自动搜索热门模组
+        self._mr_auto_searched = False
+        self.nb.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+
+    def _on_tab_changed(self, event):
+        """标签页切换事件: 第一次切到 Modrinth 时自动搜索"""
+        try:
+            current = self.nb.select()
+            tab_text = self.nb.tab(current, "text")
+            if "Modrinth" in tab_text and not getattr(self, '_mr_auto_searched', False):
+                self._mr_auto_searched = True
+                self.root.after(300, self._mr_search)
+        except Exception:
+            pass
 
     # ---------------- CurseForge 页(密钥非空才显示) ----------------
     def _build_curseforge_tab(self):
@@ -3071,6 +3169,10 @@ class VoxelApp:
             self._filter_versions()
         elif kind == "java_done":
             self._apply_java_list(payload)
+        elif kind == "server_log":
+            self._append_server_log(payload)
+        elif kind == "server_reload":
+            self._refresh_server_list()
         elif kind == "game_started":
             self.launch_btn.config(text="游戏运行中", state="disabled")
             self.stop_btn.config(state="normal")
@@ -3114,13 +3216,7 @@ class VoxelApp:
                 self.api_ver_combo['values'] = []
                 self.api_ver_var.set("(无需API)")
         elif kind == "mr_list_update":
-            self.mr_list.delete(0, "end")
-            for hit in payload:
-                dl = hit.get("downloads") or 0
-                self.mr_list.insert(
-                    "end", "{} | {} | 下载量: {}".format(
-                        hit.get("title", "?"),
-                        hit.get("project_type", "mod"), dl))
+            self._on_mr_list_update(payload)
             self._post("mr_status", "共 {} 条结果".format(len(payload)))
         elif kind == "cf_status":
             self.cf_status.config(text=payload)
@@ -3295,6 +3391,11 @@ class VoxelApp:
                 if names:
                     cur = cb.get()
                     cb.set(cur if cur in names else names[0])
+        # 同步工具页的实例下拉
+        if hasattr(self, 'tools_inst_combo'):
+            self.tools_inst_combo["values"] = names
+            if names and not self.tools_inst_combo.get():
+                self.tools_inst_combo.set(names[0])
         # 把各搜索页的版本/加载器筛选同步为当前实例的真实配置
         self._sync_filters_to_instance()
         self._update_inst_detail()
@@ -3772,6 +3873,84 @@ class VoxelApp:
         self._thread(_worker)
 
     # ---------------- Modrinth ----------------
+    def _fmt_num(self, n):
+        """格式化数字: 1234567 -> 1.23M"""
+        try:
+            n = int(n)
+            if n >= 1000000:
+                return "{:.2f}M".format(n / 1000000)
+            elif n >= 1000:
+                return "{:.1f}K".format(n / 1000)
+            return str(n)
+        except Exception:
+            return str(n)
+
+    def _on_mr_list_update(self, hits):
+        """更新 Modrinth 搜索结果列表(带图标)"""
+        try:
+            if not hasattr(self, 'mr_tree') or self.mr_tree is None:
+                return
+            self.mr_tree.delete(*self.mr_tree.get_children())
+            self.modrinth_results = hits
+            self.mr_icon_images = {}
+            import hashlib
+            cache_dir = os.path.join(CONFIG.get("game_dir"), ".voxel_cache", "mr_icons")
+            os.makedirs(cache_dir, exist_ok=True)
+            for idx, h in enumerate(hits):
+                title = h.get("title", "?")
+                ptype = h.get("project_type", "mod")
+                dl = self._fmt_num(h.get("downloads", 0))
+                item_id = self.mr_tree.insert("", "end", text="", values=(title, ptype, dl))
+                icon_url = h.get("icon_url")
+                if icon_url:
+                    self._thread(lambda u=icon_url, iid=item_id, i=idx:
+                                 self._load_mr_icon(u, iid, i, cache_dir))
+        except Exception as e:
+            print("[Modrinth] 更新列表失败:", e)
+            import traceback
+            traceback.print_exc()
+            try:
+                self.mr_status.config(text="列表更新失败: " + str(e))
+            except Exception:
+                pass
+
+    def _mr_on_select(self):
+        """Treeview 选中事件"""
+        sel = self.mr_tree.selection()
+        if sel:
+            idx = self.mr_tree.index(sel[0])
+            self.mr_selected_idx = idx
+
+    def _load_mr_icon(self, url, item_id, idx, cache_dir):
+        """异步加载模组图标"""
+        try:
+            import hashlib
+            cache_file = os.path.join(cache_dir, hashlib.md5(url.encode()).hexdigest() + ".png")
+            if os.path.exists(cache_file):
+                img = Image.open(cache_file).resize((24, 24), Image.LANCZOS)
+            else:
+                import requests
+                resp = requests.get(url, timeout=10)
+                if resp.status_code == 200:
+                    with open(cache_file, "wb") as f:
+                        f.write(resp.content)
+                    img = Image.open(cache_file).resize((24, 24), Image.LANCZOS)
+                else:
+                    return
+            photo = ImageTk.PhotoImage(img)
+            self.root.after(0, lambda: self._set_mr_icon(item_id, photo, idx))
+        except Exception:
+            pass
+
+    def _set_mr_icon(self, item_id, photo, idx):
+        """设置模组图标(主线程)"""
+        try:
+            if self.mr_tree.exists(item_id):
+                self.mr_tree.item(item_id, image=photo)
+                self.mr_icon_images[item_id] = photo
+        except Exception:
+            pass
+
     def _mr_search(self):
         query = self.mr_query.get().strip()
         gv = self.mr_gv.get().strip() or None
@@ -3800,27 +3979,22 @@ class VoxelApp:
         self._thread(_worker)
 
     def _mr_download(self):
-        sel = self.mr_list.curselection()
-        if not sel or sel[0] >= len(self.modrinth_results):
+        sel = self.mr_tree.selection()
+        if not sel:
             messagebox.showwarning("提示", "请先选择模组")
             return
-        hit = self.modrinth_results[sel[0]]
+        idx = self.mr_tree.index(sel[0])
+        if idx >= len(self.modrinth_results):
+            messagebox.showwarning("提示", "请先选择模组")
+            return
+        hit = self.modrinth_results[idx]
         project_id = hit.get("project_id") or hit.get("slug")
         name = self.inst_combo.get()
         if not name:
             messagebox.showwarning("提示", "请先在启动页选择实例")
             return
-        # 根据当前标签页决定下载到哪个目录
-        tab_idx = self.dl_notebook.index(self.dl_notebook.select())
-        tab_text = self.dl_notebook.tab(tab_idx, "text")
-        if "资源包" in tab_text:
-            sub_dir = "resourcepacks"
-        elif "数据包" in tab_text:
-            sub_dir = "datapacks"
-        elif "光影" in tab_text:
-            sub_dir = "shaderpacks"
-        else:
-            sub_dir = "mods"
+        # Modrinth 页面默认下载到 mods 目录
+        sub_dir = "mods"
         dest_dir = instance_mod.instance_subdir(name, sub_dir)
         # 下载前验证: 以当前实例的真实 MC 版本 + 加载器为准筛选
         try:
@@ -3834,23 +4008,43 @@ class VoxelApp:
         self._post("mr_status", "获取版本列表: {}".format(hit.get("title", project_id)))
         def _worker():
             try:
-                # 获取版本列表
-                versions = modrinth.get_versions(project_id, game_version=mc, loader=loader)
-                if not versions:
-                    # 没有匹配版本, 尝试获取全部版本让用户选
-                    versions = modrinth.get_versions(project_id)
+                # 获取所有版本(不过滤, 让用户在对话框里筛选)
+                versions = modrinth.get_versions(project_id)
                 if not versions:
                     raise ValueError("没有可用版本")
+                # 提取所有支持的加载器和MC版本
+                all_loaders = set()
+                all_game_versions = set()
+                for ver in versions:
+                    for ld in ver.get("loaders", []):
+                        all_loaders.add(ld)
+                    for gv in ver.get("game_versions", []):
+                        all_game_versions.add(gv)
+                loader_list = sorted(all_loaders, reverse=True)
+                gv_list = sorted(all_game_versions, reverse=True)
                 # 在主线程弹出版本选择对话框
                 selected = [None]
                 def _show_dialog():
                     dlg = tk.Toplevel(self.root)
                     dlg.title("选择版本 - " + hit.get("title", project_id))
-                    dlg.geometry("600x500")
+                    dlg.geometry("700x550")
                     dlg.transient(self.root)
                     dlg.grab_set()
-                    tk.Label(dlg, text="选择要下载的版本 (当前实例: {} + {}):".format(
-                        mc, loader or "任意"), anchor="w").pack(fill="x", padx=10, pady=5)
+                    tk.Label(dlg, text="当前实例: {} + {}  |  ★ = 兼容当前实例".format(
+                        mc, loader or "任意"), anchor="w", fg="blue").pack(fill="x", padx=10, pady=5)
+                    # 筛选器
+                    filter_frame = tk.Frame(dlg)
+                    filter_frame.pack(fill="x", padx=10, pady=5)
+                    tk.Label(filter_frame, text="加载器:").pack(side="left")
+                    loader_var = tk.StringVar(value=loader if loader in loader_list else "全部")
+                    loader_combo = ttk.Combobox(filter_frame, textvariable=loader_var,
+                                                values=["全部"] + loader_list, width=10, state="readonly")
+                    loader_combo.pack(side="left", padx=5)
+                    tk.Label(filter_frame, text="MC版本:").pack(side="left", padx=(10,0))
+                    gv_var = tk.StringVar(value=mc if mc in gv_list else "全部")
+                    gv_combo = ttk.Combobox(filter_frame, textvariable=gv_var,
+                                            values=["全部"] + gv_list, width=10, state="readonly")
+                    gv_combo.pack(side="left", padx=5)
                     # 版本列表
                     frame = tk.Frame(dlg)
                     frame.pack(fill="both", expand=True, padx=10, pady=5)
@@ -3860,22 +4054,44 @@ class VoxelApp:
                                           font=("Consolas", 10), selectmode="single")
                     listbox.pack(side="left", fill="both", expand=True)
                     scrollbar.config(command=listbox.yview)
-                    # 填充版本列表
-                    for i, ver in enumerate(versions):
-                        vname = ver.get("name", "")
-                        vnum = ver.get("version_number", "")
-                        gvs = ", ".join(ver.get("game_versions", [])[:3])
-                        lds = ", ".join(ver.get("loaders", [])[:3])
-                        ftype = ver.get("version_type", "")
-                        line = "{}. {} | {} | {} | {} | {}".format(
-                            i+1, vnum, vname[:40], gvs, lds, ftype)
-                        listbox.insert("end", line)
-                    listbox.selection_set(0)
-                    listbox.see(0)
+                    # 过滤后的版本列表
+                    filtered = [None]
+                    def _refresh_list():
+                        listbox.delete(0, "end")
+                        ld_filter = loader_var.get()
+                        gv_filter = gv_var.get()
+                        result = []
+                        for ver in versions:
+                            vloaders = ver.get("loaders", [])
+                            vgvs = ver.get("game_versions", [])
+                            if ld_filter != "全部" and ld_filter not in vloaders:
+                                continue
+                            if gv_filter != "全部" and gv_filter not in vgvs:
+                                continue
+                            result.append(ver)
+                        filtered[0] = result
+                        for i, ver in enumerate(result):
+                            vname = ver.get("name", "")
+                            vnum = ver.get("version_number", "")
+                            gvs = ", ".join(ver.get("game_versions", [])[:3])
+                            lds = ", ".join(ver.get("loaders", [])[:3])
+                            ftype = ver.get("version_type", "")
+                            # 检查是否兼容当前实例
+                            compatible = (not loader or loader in vloaders) and (not mc or mc in vgvs)
+                            star = "★" if compatible else " "
+                            line = "{}{}. {} | {} | {} | {} | {}".format(
+                                star, i+1, vnum, vname[:35], gvs, lds, ftype)
+                            listbox.insert("end", line)
+                        if result:
+                            listbox.selection_set(0)
+                            listbox.see(0)
+                    loader_combo.bind("<<ComboboxSelected>>", lambda e: _refresh_list())
+                    gv_combo.bind("<<ComboboxSelected>>", lambda e: _refresh_list())
+                    _refresh_list()
                     def _ok():
                         sel_idx = listbox.curselection()
-                        if sel_idx:
-                            selected[0] = versions[sel_idx[0]]
+                        if sel_idx and filtered[0]:
+                            selected[0] = filtered[0][sel_idx[0]]
                         dlg.destroy()
                     def _cancel():
                         dlg.destroy()
@@ -4595,7 +4811,7 @@ class VoxelApp:
 
         self._inv_labels = {}
         items = [("stone", "🪨"), ("coal", "⬛"), ("raw_iron", "🟫"),
-                 ("iron", "🔩"), ("raw_gold", "🟨"), ("gold", "🪙"),
+                 ("iron", "🔩"), ("raw_gold", "🟨"), ("gold", "💰"),
                  ("diamond", "💎"), ("emerald", "🟩"), ("ancient_debris", "🟫"),
                  ("netherite_ingot", "🔶")]
         for i, (key, icon) in enumerate(items):
@@ -4786,6 +5002,15 @@ class VoxelApp:
         xp_gain = ore.get("xp", 1)
         self._add_xp(xp_gain)
 
+        # 获得积分: 普通矿石+1, 稀有矿石+5
+        try:
+            is_rare_ore = drop in ("diamond", "emerald", "ancient_debris",
+                                   "netherite_ingot", "diamond_ore", "emerald_ore")
+            points_gain = 5 if is_rare_ore else 1
+            self._add_points(points_gain, "挖矿获得" + drop)
+        except Exception:
+            pass
+
         # 掉落文字动画
         drop_name = self._DROP_NAMES.get(drop, drop)
         count_text = f"+{drop_count}" if drop_count > 1 else "+1"
@@ -4848,30 +5073,18 @@ class VoxelApp:
 
     def _load_chest(self):
         """加载箱子数据"""
-        try:
-            path = self._chest_file()
-            if os.path.exists(path):
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                # 确保所有 key 都存在
-                for k in ("stone", "coal", "iron", "gold", "diamond", "emerald", "netherite_ingot"):
-                    data.setdefault(k, 0)
-                return data
-        except Exception:
-            pass
-        return {"stone": 0, "coal": 0, "iron": 0,
-                "gold": 0, "diamond": 0, "emerald": 0,
-                "netherite_ingot": 0}
+        default = {"stone": 0, "coal": 0, "iron": 0,
+                   "gold": 0, "diamond": 0, "emerald": 0,
+                   "netherite_ingot": 0}
+        data = self._load_json_safe(self._chest_file(), default)
+        # 确保所有 key 都存在
+        for k in default:
+            data.setdefault(k, 0)
+        return data
 
     def _save_chest(self):
         """保存箱子数据"""
-        try:
-            path = self._chest_file()
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(self._chest, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
+        self._save_json_safe(self._chest_file(), self._chest)
 
     def _update_chest_count(self):
         """更新箱子物品总数显示"""
@@ -5061,15 +5274,13 @@ class VoxelApp:
     ]
     _VILLAGER_COLORS = {"1": "#0a0a0a", "2": "#cc00cc", "3": "#222222"}
     _VILLAGER_TALKS = [
-        "嘿...", "你在看什么？", "别盯着我看",
-        "我要拿走你的方块", "末地很远，我想家了",
-        "你有末影珍珠吗？", "龙蛋是我的",
-        "别下雨，我怕水", "我可以瞬移到你身后",
-        "苦力怕又炸了？", "村民的鼻子真好玩",
-        "我不是怪物，我只是高", "末影螨真讨厌",
-        "你刚才说什么？我没在听", "下界之星闪闪发光",
-        "我曾经也是个普通人，直到被末影龙诅咒",
-        "村民？不，我是终界使者", "嘿，你的方块掉了",
+        "嗯...", "嗯?", "嗯!", "哼哼",
+        "要交易吗?", "看看我的货吧", "这可是好东西",
+        "绿宝石...我想要绿宝石", "今天天气不错",
+        "你好啊", "欢迎光临", "不买别碰",
+        "便宜卖了", "嘿嘿嘿", "需要点什么?",
+        "这个很划算的", "我可是专业的",
+        "又是忙碌的一天", "村民的生活不容易啊",
     ]
     _VILLAGER_HURT_TALKS = [
         "哎哟！", "别打我！", "救命啊！", "我错了！",
@@ -5490,11 +5701,12 @@ class VoxelApp:
             self.root.after(duration, lambda: self._villager_bubble.place_forget())
             # 只在娱乐页面播放村民叫声
             try:
-                current_tab = self.notebook.index(self.notebook.select())
-                tab_text = self.notebook.tab(current_tab, "text")
-                if "娱乐" in tab_text:
+                current_tab = self.nb.index(self.nb.select())
+                tab_text = self.nb.tab(current_tab, "text")
+                if "娱乐" in tab_text or "战斗" in tab_text:
                     game_dir = CONFIG.get("game_dir")
-                    sounds.play_villager_say(game_dir)
+                    if game_dir:
+                        sounds.play_villager_say(game_dir)
             except Exception:
                 pass
         except Exception:
@@ -5835,19 +6047,16 @@ class VoxelApp:
         if not hasattr(self, "_combat_link_enabled") or not self._combat_link_enabled.get():
             return
         try:
-            # 检查游戏联动是否已安装
-            bridge_file = os.path.join(CONFIG.get("game_dir", ""), "voxel_bridge.txt")
-            if not os.path.exists(bridge_file):
-                self._combat_log_print("游戏联动未安装，跳过游戏击杀")
-                return
-            # 写入击杀指令到游戏联动文件
-            mob_name_map = {"zombie": "Zombie", "skeleton": "Skeleton"}
-            mob_name = mob_name_map.get(mob_type, mob_type)
-            with open(bridge_file, "w", encoding="utf-8") as f:
-                f.write(f"kill_nearby:{mob_name}\n")
-            self._combat_log_print(f"游戏联动: 已击杀游戏里附近的 {mob_name}")
+            mob_name_map = {"zombie": "zombie", "skeleton": "skeleton", "spider": "spider", "creeper": "creeper"}
+            mc_mob = mob_name_map.get(mob_type, mob_type)
+            ok, killed, msg = bridge.kill_nearby_mobs(mc_mob, radius=32)
+            if ok:
+                self._combat_log_print(f"游戏联动: {msg}")
+            else:
+                self._combat_log_print(f"游戏联动失败: {msg}")
         except Exception as e:
-            self._combat_log_print(f"游戏联动失败: {e}")
+            self._combat_log_print(f"游戏联动异常: {e}")
+
 
     def _check_night_spawn(self):
         """检查是否是夜晚, 是则刷怪(战斗页面)"""
@@ -6457,27 +6666,28 @@ class VoxelApp:
             messagebox.showwarning("提示", "请先选择实例")
             return
         # 查找编译好的 Mod jar: 优先 EXE 所在目录, 然后项目目录
-        mod_jar = None
-        # 1. EXE 所在目录(打包后)
+        candidates = []
         exe_dir = Path(sys.executable).parent
         for jar in exe_dir.glob("voxellauncher-bridge*.jar"):
-            mod_jar = jar
-            break
-        # 2. 项目 dist 目录(开发时)
-        if not mod_jar:
-            dist_dir = Path(__file__).parent / "dist"
-            if dist_dir.exists():
-                for jar in dist_dir.glob("voxellauncher-bridge*.jar"):
-                    mod_jar = jar
-                    break
-        # 3. 项目 build 目录(开发时)
-        if not mod_jar:
-            bridge_dir = Path(__file__).parent / "voxellauncher-bridge" / "build" / "libs"
-            if bridge_dir.exists():
-                for jar in bridge_dir.glob("*.jar"):
-                    if "sources" not in jar.name and "dev" not in jar.name:
-                        mod_jar = jar
-                        break
+            candidates.append(jar)
+        dist_dir = Path(__file__).parent / "dist"
+        if dist_dir.exists():
+            for jar in dist_dir.glob("voxellauncher-bridge*.jar"):
+                candidates.append(jar)
+        bridge_dir = Path(__file__).parent / "voxellauncher-bridge" / "build" / "libs"
+        if bridge_dir.exists():
+            for jar in bridge_dir.glob("*.jar"):
+                if "sources" not in jar.name and "dev" not in jar.name:
+                    candidates.append(jar)
+        # 选版本号最高的
+        mod_jar = None
+        if candidates:
+            import re
+            def vkey(p):
+                m = re.search(r'(\d+)\.(\d+)\.(\d+)', p.name)
+                return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else (0,0,0)
+            candidates.sort(key=vkey, reverse=True)
+            mod_jar = candidates[0]
         # 4. 都找不到, 让用户手动选择
         if not mod_jar:
             messagebox.showinfo("提示",
@@ -6493,11 +6703,18 @@ class VoxelApp:
         game_dir = instance_mod.get_instance_game_dir(inst)
         mods_dir = Path(game_dir) / "mods"
         mods_dir.mkdir(parents=True, exist_ok=True)
+        # 先删除旧版本
+        for old in mods_dir.glob("voxellauncher-bridge*.jar"):
+            if old.name != mod_jar.name:
+                try:
+                    old.unlink()
+                except Exception:
+                    pass
         dest = mods_dir / mod_jar.name
         shutil.copy2(mod_jar, dest)
         messagebox.showinfo("安装成功",
-            "联动 Mod 已安装到:" + chr(10) + str(dest) + chr(10) + chr(10) +
-            "重启游戏后生效。游戏内挖到的矿石会实时发送到背包。")
+            "联动 Mod " + mod_jar.name + " 已安装到:" + chr(10) + str(dest) + chr(10) + chr(10) +
+            "重启游戏后生效。支持挖矿联动和战斗击杀联动。")
 
 
     def _test_bridge(self):
@@ -6824,10 +7041,19 @@ class VoxelApp:
                 if lw:
                     lw.set_progress(25)
                     lw.set_stage("正在校验游戏文件...")
+                # 自动加入服务器: 从输入框读取
+                auto_server = self.auto_join_server_var.get().strip()
+                if auto_server:
+                    self._join_server_address = auto_server
+                    self._post("log", "自动加入服务器: " + auto_server)
+                else:
+                    self._join_server_address = None
+
                 proc = launcher.launch_game(
                     inst, acct, java,
                     log_cb=_log_with_progress,
-                    on_exit=lambda: self._post("game_exited", None))
+                    on_exit=lambda: self._post("game_exited", None),
+                    server_address=getattr(self, "_join_server_address", None))
                 self.game_proc = proc
                 self._post("game_started", None)
                 # 进程已启动但不立即关窗口, 由 _check_loading_close 调度关闭
@@ -6927,6 +7153,23 @@ class VoxelApp:
                 self._post("log", "导出脚本失败: " + str(exc))
                 self._post("err", ("导出失败", str(exc)))
         self._thread(_worker)
+
+    def _open_instance_folder(self):
+        """打开当前实例的游戏目录(instances里的版本文件夹)"""
+        try:
+            inst = self.current_instance
+            if not inst:
+                self._log("未选择实例")
+                return
+            game_dir = instance_mod.get_instance_game_dir(inst)
+            import os
+            if os.path.exists(game_dir):
+                os.startfile(game_dir)
+                self._log(f"已打开实例文件夹: {game_dir}")
+            else:
+                self._log(f"实例文件夹不存在: {game_dir}")
+        except Exception as e:
+            self._log(f"打开实例文件夹失败: {e}")
 
     def _stop_game(self):
         if self.game_proc:
@@ -7764,7 +8007,7 @@ class VoxelApp:
             ("👑 王冠", "epic", 15, None),
             ("🏺 古代花瓶", "legendary", 25, None),
             ("📖 附魔书", "rare", 6, "minecraft:enchanted_book"),
-            ("🪙 金币", "uncommon", 3, "minecraft:gold_nugget"),
+            ("💰 金币", "uncommon", 3, "minecraft:gold_nugget"),
         ]
         junk_types = [
             ("🥫 罐头", "junk", 0, None),
@@ -8034,8 +8277,12 @@ class VoxelApp:
         if not name:
             return None
         try:
-            return instance_mod.get_instance_game_dir(name)
-        except Exception:
+            inst = instance_mod.get_instance(name)
+            if not inst:
+                return None
+            return instance_mod.get_instance_game_dir(inst)
+        except Exception as e:
+            print("[Tools] 获取实例目录失败:", e)
             return None
 
 
@@ -8142,6 +8389,7 @@ class VoxelApp:
         """打开mods文件夹"""
         game_dir = self._get_tools_instance_dir()
         if not game_dir:
+            messagebox.showwarning("提示", "请先在工具页顶部选择实例")
             return
         import os
         mods_dir = str(Path(game_dir) / "mods")
@@ -9039,6 +9287,7 @@ class VoxelApp:
         """打开截图文件夹"""
         game_dir = self._get_tools_instance_dir()
         if not game_dir:
+            messagebox.showwarning("提示", "请先在工具页顶部选择实例")
             return
         import os
         shots_dir = str(Path(game_dir) / "screenshots")
@@ -9203,6 +9452,633 @@ class VoxelApp:
             messagebox.showinfo("存档目录", saves_dir)
 
     # ---------------- 关于页 ----------------
+    def _build_multiplayer_tab(self):
+        """构建联机页面"""
+        tab = self.tab_multiplayer
+
+        # 顶部说明
+        info_frame = ttk.LabelFrame(tab, text="联机说明")
+        info_frame.pack(fill="x", padx=10, pady=8)
+        ttk.Label(info_frame, text="局域网: 自动扫描同一WiFi/路由器下的MC世界, 一键加入\n"
+                                  "外网: 需要对方开放端口或使用内网穿透, 手动添加服务器地址",
+                  wraplength=700, justify="left").pack(padx=10, pady=8)
+
+        # 工具栏
+        toolbar = ttk.Frame(tab)
+        toolbar.pack(fill="x", padx=10, pady=4)
+        ttk.Button(toolbar, text="🔍 扫描局域网",
+                   command=self._scan_lan).pack(side="left", padx=2)
+        ttk.Button(toolbar, text="➕ 添加服务器",
+                   command=self._add_server).pack(side="left", padx=2)
+        ttk.Button(toolbar, text="🔄 刷新状态",
+                   command=self._refresh_servers).pack(side="left", padx=2)
+        ttk.Button(toolbar, text="🗑 删除选中",
+                   command=self._remove_server).pack(side="left", padx=2)
+        ttk.Button(toolbar, text="🎮 加入选中服务器",
+                   command=self._join_server).pack(side="right", padx=2)
+
+        # 本机IP显示
+        ip_frame = ttk.Frame(tab)
+        ip_frame.pack(fill="x", padx=10, pady=4)
+        self._lan_ip_label = ttk.Label(ip_frame, text="本机IP: 检测中...")
+        self._lan_ip_label.pack(side="left")
+        ttk.Button(ip_frame, text="复制IP",
+                   command=self._copy_lan_ip).pack(side="left", padx=8)
+
+        # 服务器列表
+        list_frame = ttk.LabelFrame(tab, text="服务器列表")
+        list_frame.pack(fill="both", expand=True, padx=10, pady=8)
+
+        columns = ("name", "address", "players", "version", "type")
+        self.mp_tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=12)
+        self.mp_tree.heading("name", text="名称")
+        self.mp_tree.heading("address", text="地址")
+        self.mp_tree.heading("players", text="人数")
+        self.mp_tree.heading("version", text="版本")
+        self.mp_tree.heading("type", text="类型")
+        self.mp_tree.column("name", width=200)
+        self.mp_tree.column("address", width=200)
+        self.mp_tree.column("players", width=80, anchor="center")
+        self.mp_tree.column("version", width=120)
+        self.mp_tree.column("type", width=80, anchor="center")
+        self.mp_tree.pack(side="left", fill="both", expand=True, padx=4, pady=4)
+
+        sb = ttk.Scrollbar(list_frame, orient="vertical", command=self.mp_tree.yview)
+        sb.pack(side="right", fill="y")
+        self.mp_tree.configure(yscrollcommand=sb.set)
+        self.mp_tree.bind("<Double-1>", lambda e: self._join_server())
+
+        # 内网穿透区域
+        nat_frame = ttk.LabelFrame(tab, text="外网联机 - 内网穿透工具")
+        nat_frame.pack(fill="x", padx=10, pady=8)
+
+        ttk.Label(nat_frame, text="没有公网IP？用下面的工具把你的世界映射到外网，朋友就能连了。选一个喜欢的，点按钮去官网下载配置。",
+                  wraplength=700, justify="left").pack(padx=10, pady=(8, 4), anchor="w")
+
+        # 工具列表
+        nat_tools = [
+            ("Sakura Frp (樱花映射)", "国内免费，速度快，推荐新手用", "https://www.natfrp.com/"),
+            ("OpenFrp", "国内免费，节点多，稳定", "https://openfrp.net/"),
+            ("ngrok", "国外老牌，免费版有流量限制", "https://ngrok.com/"),
+            ("ZeroTier", "P2P虚拟局域网，不用服务器", "https://www.zerotier.com/"),
+            ("Tailscale", "P2P虚拟局域网，WireGuard底层", "https://tailscale.com/"),
+            ("花生壳", "国内老牌，有免费版", "https://hsk.oray.com/"),
+            ("cpolar", "国内，支持HTTP/TCP", "https://www.cpolar.com/"),
+        ]
+
+        nat_list_frame = ttk.Frame(nat_frame)
+        nat_list_frame.pack(fill="x", padx=10, pady=6)
+
+        for i, (name, desc, url) in enumerate(nat_tools):
+            row = ttk.Frame(nat_list_frame)
+            row.pack(fill="x", pady=2)
+            ttk.Label(row, text=name, width=22, font=("微软雅黑", 9, "bold")).pack(side="left")
+            ttk.Label(row, text=desc, foreground="#888", font=("微软雅黑", 8)).pack(side="left", padx=8)
+            ttk.Button(row, text="去官网", width=8,
+                       command=lambda u=url: self._open_url(u)).pack(side="right")
+
+        # 使用说明
+        help_frame = ttk.Frame(nat_frame)
+        help_frame.pack(fill="x", padx=10, pady=(4, 8))
+        ttk.Label(help_frame, text="使用步骤：", font=("微软雅黑", 9, "bold")).pack(anchor="w")
+        steps = [
+            "1. 选一个工具，点「去官网」注册账号并下载客户端",
+            "2. 在工具里创建一条 TCP 隧道，本地端口填 25565（或你游戏里开放的端口）",
+            "3. 启动隧道，工具会给你一个外网地址（比如 xxx.com:12345）",
+            "4. 在游戏里 ESC -> 对局域网开放，记住端口",
+            "5. 把外网地址发给朋友，朋友在启动器联机页「添加服务器」填这个地址就能连了",
+        ]
+        for step in steps:
+            ttk.Label(help_frame, text=step, foreground="#aaa", font=("微软雅黑", 8)).pack(anchor="w", padx=10)
+
+        # 状态
+        self.mp_status = ttk.Label(tab, text="就绪")
+        self.mp_status.pack(fill="x", padx=10, pady=4)
+
+        # 初始化服务器列表
+        self._server_list = multiplayer.ServerList()
+        self._refresh_server_list()
+
+        # 显示本机IP
+        def _show_ip():
+            ip = multiplayer.get_local_ip()
+            self._lan_ip_label.config(text=f"本机IP: {ip}  (告诉朋友加这个)")
+        self.root.after(500, _show_ip)
+
+    def _refresh_server_list(self):
+        """刷新服务器列表显示"""
+        self.mp_tree.delete(*self.mp_tree.get_children())
+        for srv in self._server_list.get_all():
+            addr = multiplayer.get_server_address(srv)
+            type_name = "局域网" if srv.get("type") == "lan" else "收藏"
+            self.mp_tree.insert("", "end", values=(
+                srv.get("name", ""), addr,
+                srv.get("players", "?"),
+                srv.get("version", "?"),
+                type_name
+            ))
+
+    def _scan_lan(self):
+        """扫描局域网"""
+        self.mp_status.config(text="正在扫描局域网, 请稍候...")
+        self._log("开始扫描局域网服务器...")
+
+        def _worker():
+            found = []
+            def _callback(srv):
+                found.append(srv)
+                self.root.after(0, lambda: self._add_lan_server(srv))
+
+            servers = multiplayer.scan_lan_servers(callback=_callback)
+            self.root.after(0, lambda: self._on_scan_complete(len(servers)))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _add_lan_server(self, srv):
+        """添加扫描到的局域网服务器到列表"""
+        addr = multiplayer.get_server_address(srv)
+        # 检查是否已存在
+        for item in self.mp_tree.get_children():
+            vals = self.mp_tree.item(item, "values")
+            if vals[1] == addr:
+                return
+        self.mp_tree.insert("", "end", values=(
+            srv.get("name", "局域网世界"), addr,
+            srv.get("players", "?"),
+            srv.get("version", "?"),
+            "局域网"
+        ))
+
+    def _on_scan_complete(self, count):
+        """扫描完成"""
+        self.mp_status.config(text=f"扫描完成, 找到 {count} 个服务器")
+        self._log(f"局域网扫描完成, 找到 {count} 个服务器")
+
+    def _add_server(self):
+        """手动添加服务器"""
+        from tkinter import simpledialog
+        name = simpledialog.askstring("添加服务器", "服务器名称:", parent=self.root)
+        if not name:
+            return
+        address = simpledialog.askstring("添加服务器", "服务器地址 (IP或域名, 可加:端口):", parent=self.root)
+        if not address:
+            return
+
+        # 解析地址和端口
+        if ":" in address:
+            ip, port = address.rsplit(":", 1)
+            try:
+                port = int(port)
+            except ValueError:
+                port = 25565
+        else:
+            ip = address
+            port = 25565
+
+        self._server_list.add(name, ip, port)
+        self._refresh_server_list()
+        self.mp_status.config(text=f"已添加服务器: {name}")
+
+    def _remove_server(self):
+        """删除选中的服务器"""
+        selection = self.mp_tree.selection()
+        if not selection:
+            self.mp_status.config(text="请先选择一个服务器")
+            return
+        for item in selection:
+            idx = self.mp_tree.index(item)
+            self._server_list.remove(idx)
+        self._refresh_server_list()
+        self.mp_status.config(text="已删除")
+
+    def _refresh_servers(self):
+        """刷新服务器状态"""
+        self.mp_status.config(text="正在刷新服务器状态...")
+        def _callback(i, srv):
+            self.root.after(0, self._refresh_server_list)
+        self._server_list.refresh(callback=_callback)
+        self.mp_status.config(text="刷新完成")
+
+    def _join_server(self):
+        """加入选中的服务器"""
+        selection = self.mp_tree.selection()
+        if not selection:
+            self.mp_status.config(text="请先选择一个服务器")
+            return
+        item = selection[0]
+        vals = self.mp_tree.item(item, "values")
+        address = vals[1]
+        name = vals[0]
+
+        # 解析地址
+        if ":" in address:
+            ip, port = address.rsplit(":", 1)
+        else:
+            ip = address
+            port = "25565"
+
+        self.mp_status.config(text=f"正在加入: {name} ({address})")
+        self._log(f"加入服务器: {name} ({address})")
+
+        # 启动游戏并连接服务器
+        try:
+            # 设置要连接的服务器地址 (通过启动参数)
+            self._join_server_address = address
+            # 启动游戏
+            self._launch()
+            # 启动后清除地址, 下次正常启动不连服务器
+            def _clear():
+                self._join_server_address = None
+            self.root.after(5000, _clear)
+        except Exception as e:
+            self.mp_status.config(text=f"加入失败: {e}")
+            self._log(f"加入服务器失败: {e}")
+            self._join_server_address = None
+
+    def _copy_lan_ip(self):
+        """复制本机IP"""
+        ip = multiplayer.get_local_ip()
+        self.root.clipboard_clear()
+        self.root.clipboard_append(ip)
+        self.mp_status.config(text=f"IP已复制: {ip}")
+
+    def _open_url(self, url):
+        """打开网页"""
+        try:
+            webbrowser.open(url)
+            self.mp_status.config(text=f"已打开: {url}")
+        except Exception as e:
+            self.mp_status.config(text=f"打开失败: {e}")
+
+    # ---------------------------------------------------------------
+    # 一键开服器页面
+    # ---------------------------------------------------------------
+    def _build_server_tab(self):
+        """构建一键开服器页面"""
+        import server_manager
+        f = self.tab_server
+        self._server_inst = None
+        self._server_running = False
+
+        # 顶部: 服务器列表和操作
+        top = ttk.Frame(f)
+        top.pack(fill="x", padx=10, pady=8)
+
+        ttk.Label(top, text="服务器:", font=("", 10, "bold")).pack(side="left")
+        self.server_combo = ttk.Combobox(top, state="readonly", width=25)
+        self.server_combo.pack(side="left", padx=5)
+        ttk.Button(top, text="刷新", command=self._refresh_server_list).pack(side="left", padx=2)
+        ttk.Button(top, text="打开文件夹", command=self._open_server_dir).pack(side="left", padx=2)
+        ttk.Button(top, text="删除", command=self._delete_server).pack(side="left", padx=2)
+
+        # 创建新服务器区域
+        create_frame = ttk.LabelFrame(f, text=" 创建新服务器 ")
+        create_frame.pack(fill="x", padx=10, pady=5)
+
+        row1 = ttk.Frame(create_frame)
+        row1.pack(fill="x", padx=10, pady=5)
+        ttk.Label(row1, text="MC版本:").pack(side="left")
+        self.server_version = ttk.Entry(row1, width=12)
+        self.server_version.insert(0, "1.21.1")
+        self.server_version.pack(side="left", padx=5)
+        ttk.Label(row1, text="类型:").pack(side="left", padx=(10,0))
+        self.server_type = ttk.Combobox(row1, values=["原版", "Fabric"], width=10, state="readonly")
+        self.server_type.set("原版")
+        self.server_type.pack(side="left", padx=5)
+        ttk.Label(row1, text="内存:").pack(side="left", padx=(10,0))
+        self.server_memory = ttk.Combobox(row1, values=["1G", "2G", "4G", "6G", "8G"], width=6, state="readonly")
+        self.server_memory.set("2G")
+        self.server_memory.pack(side="left", padx=5)
+        ttk.Button(row1, text="下载并创建", command=self._create_server).pack(side="left", padx=10)
+
+        # 服务器控制
+        ctrl_frame = ttk.Frame(f)
+        ctrl_frame.pack(fill="x", padx=10, pady=5)
+        self.server_start_btn = ttk.Button(ctrl_frame, text="▶ 启动服务器", command=self._start_server)
+        self.server_start_btn.pack(side="left", padx=5)
+        self.server_stop_btn = ttk.Button(ctrl_frame, text="⏹ 停止服务器", command=self._stop_server, state="disabled")
+        self.server_stop_btn.pack(side="left", padx=5)
+
+        # 连接信息
+        self.server_info_label = ttk.Label(ctrl_frame, text="未运行", foreground="#666")
+        self.server_info_label.pack(side="left", padx=20)
+
+        # 控制台
+        console_frame = ttk.LabelFrame(f, text=" 服务器控制台 ")
+        console_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+        self.server_console = tk.Text(console_frame, height=15, font=("Consolas", 9),
+                                       bg="#1e1e1e", fg="#00ff00", insertbackground="white")
+        self.server_console.pack(side="left", fill="both", expand=True)
+        sb = ttk.Scrollbar(console_frame, command=self.server_console.yview)
+        sb.pack(side="right", fill="y")
+        self.server_console.configure(yscrollcommand=sb.set)
+
+        # 命令输入
+        cmd_frame = ttk.Frame(f)
+        cmd_frame.pack(fill="x", padx=10, pady=5)
+        ttk.Label(cmd_frame, text="命令:").pack(side="left")
+        self.server_cmd = ttk.Entry(cmd_frame)
+        self.server_cmd.pack(side="left", fill="x", expand=True, padx=5)
+        self.server_cmd.bind("<Return>", lambda e: self._send_server_cmd())
+        ttk.Button(cmd_frame, text="发送", command=self._send_server_cmd).pack(side="left")
+
+        # 初始化列表
+        self._refresh_server_list()
+
+    def _refresh_server_list(self):
+        """刷新服务器列表"""
+        if not hasattr(self, 'server_combo') or self.server_combo is None:
+            return
+        import server_manager
+        servers = server_manager.list_servers()
+        self.server_combo["values"] = servers
+        if servers and not self.server_combo.get():
+            self.server_combo.set(servers[0])
+
+    def _create_server(self):
+        """创建新服务器"""
+        import server_manager
+        version = self.server_version.get().strip()
+        stype = self.server_type.get()
+        if not version:
+            messagebox.showwarning("提示", "请输入MC版本")
+            return
+
+        def _worker():
+            try:
+                java_path = self.java_combo.get().split(" | ")[-1] if self.java_combo.get() else "java"
+                if stype == "Fabric":
+                    name = server_manager.download_fabric_server(
+                        version, progress_cb=lambda msg: self._post("server_log", msg),
+                        java_path=java_path)
+                else:
+                    name = server_manager.download_vanilla_server(
+                        version, progress_cb=lambda msg: self._post("server_log", msg))
+                self._post("server_log", "服务器创建成功: " + name)
+                self._post("server_reload", None)
+            except Exception as e:
+                self._post("server_log", "创建失败: " + str(e))
+                self._post("err", ("创建失败", str(e)))
+
+        self._append_server_log("开始创建服务器...")
+        self._thread(_worker)
+
+    def _start_server(self):
+        """启动服务器"""
+        import server_manager
+        name = self.server_combo.get()
+        if not name:
+            messagebox.showwarning("提示", "请先选择服务器")
+            return
+        if self._server_running:
+            return
+
+        memory = self.server_memory.get()
+        java_path = self.java_combo.get().split(" | ")[-1] if self.java_combo.get() else "java"
+
+        try:
+            self._server_inst = server_manager.MinecraftServer(name, java_path=java_path, memory=memory)
+            self._server_inst.output_callback = self._append_server_log
+            self._server_inst.start()
+            self._server_running = True
+            self.server_start_btn.config(state="disabled")
+            self.server_stop_btn.config(state="normal")
+
+            ip = self._server_inst.get_local_ip()
+            port = self._server_inst.get_port()
+            self.server_info_label.config(
+                text="运行中 | 局域网地址: {}:{}".format(ip, port),
+                foreground="green")
+            self._append_server_log("服务器启动中...")
+        except Exception as e:
+            messagebox.showerror("启动失败", str(e))
+
+    def _stop_server(self):
+        """停止服务器"""
+        if self._server_inst:
+            self._append_server_log("正在停止服务器...")
+            self._server_inst.stop()
+            self._server_running = False
+            self.server_start_btn.config(state="normal")
+            self.server_stop_btn.config(state="disabled")
+            self.server_info_label.config(text="已停止", foreground="#666")
+
+    def _send_server_cmd(self):
+        """发送命令到服务器"""
+        cmd = self.server_cmd.get().strip()
+        if not cmd:
+            return
+        if self._server_inst and self._server_running:
+            self._server_inst.send_command(cmd)
+            self._append_server_log("> " + cmd)
+        else:
+            self._append_server_log("[错误] 服务器未运行")
+        self.server_cmd.delete(0, "end")
+
+    def _append_server_log(self, msg):
+        """添加控制台日志"""
+        self.server_console.insert("end", msg + "\n")
+        self.server_console.see("end")
+
+    def _open_server_dir(self):
+        """打开服务器文件夹"""
+        import server_manager
+        name = self.server_combo.get()
+        if not name:
+            messagebox.showwarning("提示", "请先选择服务器")
+            return
+        import os
+        d = str(server_manager.get_servers_dir() / name)
+        try:
+            os.startfile(d)
+        except Exception:
+            messagebox.showinfo("服务器目录", d)
+
+    def _delete_server(self):
+        """删除服务器"""
+        import server_manager
+        name = self.server_combo.get()
+        if not name:
+            messagebox.showwarning("提示", "请先选择服务器")
+            return
+        if self._server_running:
+            messagebox.showwarning("提示", "请先停止服务器")
+            return
+        if messagebox.askyesno("确认", "确定删除服务器 {}?\n这将删除所有存档和配置!".format(name)):
+            try:
+                server_manager.delete_server(name)
+                self._refresh_server_list()
+                messagebox.showinfo("成功", "已删除")
+            except Exception as e:
+                messagebox.showerror("失败", str(e))
+
+    # ---------------------------------------------------------------
+    # 服务中心页面
+    # ---------------------------------------------------------------
+    def _build_services_tab(self):
+        """构建服务中心页面 - 管理各种第三方服务"""
+        tab = ttk.Frame(self.tools_nb)
+        self.tools_nb.add(tab, text=" ⚙ 服务中心 ")
+        # 标题
+        title_frame = ttk.Frame(tab)
+        title_frame.pack(fill="x", padx=15, pady=(15, 10))
+        ttk.Label(title_frame, text="服务中心", font=("微软雅黑", 16, "bold")).pack(side="left")
+        ttk.Label(title_frame, text="管理各种第三方服务的登录与连接",
+                  foreground="#888", font=("微软雅黑", 9)).pack(side="left", padx=10)
+
+        # Tailscale 服务卡片
+        ts_frame = ttk.LabelFrame(tab, text=" Tailscale - 虚拟局域网 ")
+        ts_frame.pack(fill="x", padx=15, pady=8)
+
+        # 状态行
+        status_row = ttk.Frame(ts_frame)
+        status_row.pack(fill="x", padx=12, pady=(10, 5))
+        self.ts_status_label = ttk.Label(status_row, text="● 检测中...",
+                                         font=("微软雅黑", 10, "bold"))
+        self.ts_status_label.pack(side="left")
+        ttk.Button(status_row, text="刷新", width=8,
+                   command=self._refresh_tailscale).pack(side="right")
+
+        # IP 行
+        ip_row = ttk.Frame(ts_frame)
+        ip_row.pack(fill="x", padx=12, pady=4)
+        ttk.Label(ip_row, text="虚拟IP:", width=8, font=("微软雅黑", 9)).pack(side="left")
+        self.ts_ip_label = ttk.Label(ip_row, text="--", font=("Consolas", 11, "bold"),
+                                     foreground="#4a90d9")
+        self.ts_ip_label.pack(side="left", padx=5)
+        ttk.Button(ip_row, text="复制IP", width=8,
+                   command=self._copy_tailscale_ip).pack(side="left", padx=5)
+
+        # 账号行
+        acct_row = ttk.Frame(ts_frame)
+        acct_row.pack(fill="x", padx=12, pady=4)
+        ttk.Label(acct_row, text="登录账号:", width=8, font=("微软雅黑", 9)).pack(side="left")
+        self.ts_acct_label = ttk.Label(acct_row, text="--", font=("微软雅黑", 9))
+        self.ts_acct_label.pack(side="left", padx=5)
+
+        # 设备列表
+        dev_row = ttk.Frame(ts_frame)
+        dev_row.pack(fill="x", padx=12, pady=4)
+        ttk.Label(dev_row, text="在线设备:", width=8, font=("微软雅黑", 9)).pack(side="left")
+        self.ts_devices_label = ttk.Label(dev_row, text="--", font=("微软雅黑", 9),
+                                           foreground="#888")
+        self.ts_devices_label.pack(side="left", padx=5)
+
+        # 按钮行
+        btn_row = ttk.Frame(ts_frame)
+        btn_row.pack(fill="x", padx=12, pady=(8, 10))
+        ttk.Button(btn_row, text="打开管理后台", width=14,
+                   command=lambda: self._open_url("https://login.tailscale.com/admin/machines")).pack(side="left", padx=3)
+        ttk.Button(btn_row, text="打开官网", width=10,
+                   command=lambda: self._open_url("https://tailscale.com/")).pack(side="left", padx=3)
+        ttk.Button(btn_row, text="断开连接", width=10,
+                   command=self._tailscale_down).pack(side="left", padx=3)
+        ttk.Button(btn_row, text="重新连接", width=10,
+                   command=self._tailscale_up).pack(side="left", padx=3)
+
+        # 使用说明
+        help_frame = ttk.Frame(ts_frame)
+        help_frame.pack(fill="x", padx=12, pady=(0, 10))
+        ttk.Label(help_frame, text="说明：Tailscale 是一个 P2P 虚拟局域网工具，安装登录后，两台设备用同一个账号登录就能互相直连，不需要公网IP和端口映射。",
+                  wraplength=700, foreground="#999", font=("微软雅黑", 8), justify="left").pack(anchor="w")
+
+        # 预留其他服务
+        ttk.Label(tab, text="更多服务即将加入...", foreground="#bbb",
+                  font=("微软雅黑", 9)).pack(pady=20)
+
+        # 初始化时刷新一次
+        self.root.after(1000, self._refresh_tailscale)
+
+    def _run_tailscale_cmd(self, args):
+        """运行 tailscale 命令并返回输出"""
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["tailscale"] + args,
+                capture_output=True, text=True, timeout=10,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            )
+            return result.stdout.strip(), result.returncode
+        except FileNotFoundError:
+            return None, -1
+        except Exception:
+            return None, -2
+
+    def _refresh_tailscale(self):
+        """刷新 Tailscale 状态"""
+        try:
+            # 检查是否安装
+            output, code = self._run_tailscale_cmd(["status"])
+            if code == -1:
+                self.ts_status_label.config(text="● 未安装", foreground="#ff6b6b")
+                self.ts_ip_label.config(text="未安装")
+                self.ts_acct_label.config(text="--")
+                self.ts_devices_label.config(text="--")
+                return
+            if code != 0 or not output:
+                self.ts_status_label.config(text="● 未连接", foreground="#ff6b6b")
+                self.ts_ip_label.config(text="--")
+                self.ts_acct_label.config(text="--")
+                self.ts_devices_label.config(text="--")
+                return
+
+            # 已连接
+            self.ts_status_label.config(text="● 已连接", foreground="#51cf66")
+
+            # 获取IP
+            ip_out, _ = self._run_tailscale_cmd(["ip", "-4"])
+            if ip_out:
+                self.ts_ip_label.config(text=ip_out.split("\n")[0].strip())
+
+            # 解析设备列表
+            lines = [l for l in output.split("\n") if l.strip()]
+            devices = []
+            for line in lines:
+                parts = line.split()
+                if len(parts) >= 2:
+                    name = parts[1]
+                    ip = parts[0]
+                    devices.append(f"{name} ({ip})")
+            if devices:
+                self.ts_devices_label.config(text=f"{len(devices)} 台设备")
+                # 找自己的设备名(带100.x的)
+                for d in devices:
+                    if "100." in d:
+                        self.ts_acct_label.config(text=d.split(" (")[0])
+                        break
+            else:
+                self.ts_devices_label.config(text="1 台设备")
+
+        except Exception as e:
+            self.ts_status_label.config(text=f"● 检测失败: {e}", foreground="#ff6b6b")
+
+    def _copy_tailscale_ip(self):
+        """复制 Tailscale IP"""
+        ip = self.ts_ip_label.cget("text")
+        if ip and ip != "--" and ip != "未安装":
+            self.root.clipboard_clear()
+            self.root.clipboard_append(ip)
+            self.ts_status_label.config(text=f"● IP已复制: {ip}", foreground="#4a90d9")
+        else:
+            self.ts_status_label.config(text="● 没有可复制的IP", foreground="#ff6b6b")
+
+    def _tailscale_down(self):
+        """断开 Tailscale"""
+        try:
+            self._run_tailscale_cmd(["down"])
+            self.root.after(500, self._refresh_tailscale)
+        except Exception as e:
+            self.ts_status_label.config(text=f"● 断开失败: {e}", foreground="#ff6b6b")
+
+    def _tailscale_up(self):
+        """重连 Tailscale"""
+        try:
+            self._run_tailscale_cmd(["up"])
+            self.root.after(2000, self._refresh_tailscale)
+        except Exception as e:
+            self.ts_status_label.config(text=f"● 连接失败: {e}", foreground="#ff6b6b")
+
     def _build_about_tab(self):
         """关于页面: 启动器信息 + 使用说明 + 娱乐功能介绍"""
         f = self.tab_about
@@ -9268,6 +10144,8 @@ class VoxelApp:
 - 🐟 养殖系统: 养鱼等动物, 动物贴图从游戏提取
 - 🎣 钓鱼小游戏: 等待鱼上钩, 把握时机拉杆, 钓到各种鱼和宝藏
 - 🎒 背包和箱子: 物品存储和管理
+- 💰 积分系统: 挖矿获得积分, 普通矿石+1, 稀有矿石+5
+- 🎁 积分兑换: 用积分兑换游戏物品, 支持直接发送到游戏背包(15种物品)
 
 【⚔️ 战斗系统】
 「⚔️ 战斗」单独页面:
@@ -9282,6 +10160,7 @@ class VoxelApp:
 【🔗 游戏联动】
 - ⛏ 挖矿联动: 挖到矿石实时发送到游戏背包
 - ⚔ 战斗联动: 击杀怪物时游戏里附近同种怪物也死亡
+- 🎁 积分兑换联动: 积分兑换的物品直接发送到游戏背包, 无需手动输入命令
 - 需要安装游戏联动Mod(设置页有「安装联动Mod」按钮)
 
 【设置】
@@ -9324,6 +10203,582 @@ A: 下载后进入游戏 -> 选项 -> 资源包 -> 选中启用
                    command=lambda: messagebox.showinfo("检查更新",
                        "当前已是最新版本 v2.0.0" + chr(10) +
                        "感谢使用 VoxelLauncher!")).pack(side="left", padx=5)
+
+    def _build_friends_tab(self):
+        """联机中心: 局域网扫描 + 服务器收藏 + 邀请码 + 好友"""
+        import server_scanner
+        f = self.tab_friends
+
+        # 顶部标题
+        title_frame = tk.Frame(f, bg="#6a1b9a", height=60)
+        title_frame.pack(fill="x")
+        title_frame.pack_propagate(False)
+        tk.Label(title_frame, text="🌐 联机中心", bg="#6a1b9a",
+                 fg="white", font=("Arial", 18, "bold")).pack(side="left", padx=20, pady=10)
+        self.lan_status_label = tk.Label(title_frame, text="", bg="#6a1b9a",
+                                         fg="#e1bee7", font=("Arial", 10))
+        self.lan_status_label.pack(side="left", padx=10)
+
+        # 顶部工具栏
+        toolbar = tk.Frame(f, bg="#f5f5f5")
+        toolbar.pack(fill="x", padx=10, pady=5)
+
+        ttk.Button(toolbar, text="🔍 扫描局域网",
+                   command=self._scan_lan).pack(side="left", padx=3)
+        ttk.Button(toolbar, text="⭐ 收藏服务器",
+                   command=self._add_favorite_dialog).pack(side="left", padx=3)
+        ttk.Button(toolbar, text="🔄 刷新状态",
+                   command=self._refresh_all_servers).pack(side="left", padx=3)
+
+        # 邀请码
+        invite_frame = tk.Frame(toolbar, bg="#f5f5f5")
+        invite_frame.pack(side="right", padx=3)
+        tk.Label(invite_frame, text="邀请码:", bg="#f5f5f5", font=("Arial", 9)).pack(side="left")
+        self.quick_code_var = tk.StringVar()
+        ttk.Entry(invite_frame, textvariable=self.quick_code_var, width=20).pack(side="left", padx=3)
+        ttk.Button(invite_frame, text="加入",
+                   command=self._join_by_code).pack(side="left")
+        ttk.Button(invite_frame, text="生成我的",
+                   command=self._show_invite_dialog).pack(side="left", padx=3)
+
+        # 主区域：左右分栏
+        main_paned = tk.PanedWindow(f, orient="horizontal", sashrelief="raised")
+        main_paned.pack(fill="both", expand=True, padx=10, pady=5)
+
+        # 左侧：局域网发现 + 服务器收藏
+        left_frame = tk.Frame(main_paned)
+        main_paned.add(left_frame, minsize=300)
+
+        # 局域网发现
+        lan_frame = tk.LabelFrame(left_frame, text=" 🔍 局域网发现 ", padx=5, pady=5)
+        lan_frame.pack(fill="both", expand=True, pady=(0, 5))
+
+        self.lan_listbox = tk.Listbox(lan_frame, font=("Arial", 9))
+        self.lan_listbox.pack(side="left", fill="both", expand=True)
+        lan_scroll = ttk.Scrollbar(lan_frame, command=self.lan_listbox.yview)
+        lan_scroll.pack(side="right", fill="y")
+        self.lan_listbox.configure(yscrollcommand=lan_scroll.set)
+        self.lan_listbox.bind("<Double-Button-1>", self._join_lan_server)
+
+        lan_btn = tk.Frame(left_frame)
+        lan_btn.pack(fill="x", pady=(0, 5))
+        ttk.Button(lan_btn, text="🚀 加入选中",
+                   command=self._join_lan_server).pack(side="left", padx=2)
+        ttk.Button(lan_btn, text="⭐ 收藏",
+                   command=self._favorite_lan).pack(side="left", padx=2)
+
+        # 服务器收藏
+        fav_frame = tk.LabelFrame(left_frame, text=" ⭐ 服务器收藏 ", padx=5, pady=5)
+        fav_frame.pack(fill="both", expand=True)
+
+        self.fav_listbox = tk.Listbox(fav_frame, font=("Arial", 9))
+        self.fav_listbox.pack(side="left", fill="both", expand=True)
+        fav_scroll = ttk.Scrollbar(fav_frame, command=self.fav_listbox.yview)
+        fav_scroll.pack(side="right", fill="y")
+        self.fav_listbox.configure(yscrollcommand=fav_scroll.set)
+        self.fav_listbox.bind("<Double-Button-1>", self._join_favorite)
+
+        fav_btn = tk.Frame(left_frame)
+        fav_btn.pack(fill="x", pady=(5, 0))
+        ttk.Button(fav_btn, text="🚀 加入选中",
+                   command=self._join_favorite).pack(side="left", padx=2)
+        ttk.Button(fav_btn, text="🗑 删除",
+                   command=self._remove_favorite).pack(side="left", padx=2)
+
+        # 右侧：好友列表
+        right_frame = tk.LabelFrame(main_paned, text=" 👥 好友 ", padx=5, pady=5)
+        main_paned.add(right_frame, minsize=250)
+
+        # 添加好友
+        add_frame = tk.Frame(right_frame, bg="#f5f5f5")
+        add_frame.pack(fill="x", pady=(0, 5))
+        tk.Label(add_frame, text="ID:", bg="#f5f5f5", font=("Arial", 9)).pack(side="left")
+        self.friend_name_var = tk.StringVar()
+        ttk.Entry(add_frame, textvariable=self.friend_name_var, width=10).pack(side="left", padx=2)
+        tk.Label(add_frame, text="IP:", bg="#f5f5f5", font=("Arial", 9)).pack(side="left")
+        self.friend_ip_var = tk.StringVar()
+        ttk.Entry(add_frame, textvariable=self.friend_ip_var, width=12).pack(side="left", padx=2)
+        ttk.Button(add_frame, text="➕", command=self._add_friend, width=3).pack(side="left", padx=2)
+
+        # 好友列表
+        self.friends_canvas = tk.Canvas(right_frame, bg="#f5f5f5", highlightthickness=0)
+        friends_scroll = ttk.Scrollbar(right_frame, orient="vertical",
+                                       command=self.friends_canvas.yview)
+        self.friends_canvas.configure(yscrollcommand=friends_scroll.set)
+        friends_scroll.pack(side="right", fill="y")
+        self.friends_canvas.pack(side="left", fill="both", expand=True)
+
+        self.friends_inner = tk.Frame(self.friends_canvas, bg="#f5f5f5")
+        self.friends_canvas.create_window((0, 0), window=self.friends_inner, anchor="nw")
+        self.friends_inner.bind("<Configure>",
+            lambda e: self.friends_canvas.configure(scrollregion=self.friends_canvas.bbox("all")))
+
+        # 底部提示
+        tip = tk.Label(f, text="💡 同WiFi下好友开了局域网世界会自动扫描到 | 收藏的服务器自动显示在线状态和人数",
+                       bg="#f5f5f5", fg="#888", font=("Arial", 9))
+        tip.pack(fill="x", padx=10, pady=3)
+
+        self._refresh_favorites()
+        self._refresh_friends()
+
+    def _scan_lan(self):
+        """扫描局域网服务器"""
+        import server_scanner
+        self.lan_status_label.config(text="🔍 正在扫描局域网...")
+        self.lan_listbox.delete(0, "end")
+        self.lan_listbox.insert("end", "正在扫描，请稍候...")
+
+        def _callback(results):
+            self.root.after(0, lambda: self._lan_scan_done(results))
+
+        server_scanner.scan_lan_async(25565, _callback)
+
+    def _lan_scan_done(self, results):
+        """局域网扫描完成"""
+        import server_scanner
+        self.lan_listbox.delete(0, "end")
+        if not results:
+            self.lan_status_label.config(text="❌ 未发现局域网服务器")
+            self.lan_listbox.insert("end", "未发现局域网内的Minecraft服务器")
+            self.lan_listbox.insert("end", "")
+            self.lan_listbox.insert("end", "提示: 让好友进入游戏 -> 对局域网开放")
+            return
+
+        self.lan_status_label.config(text="✅ 发现 {} 个服务器".format(len(results)))
+        self._lan_results = results
+        for ip, port, latency in results:
+            # 查询服务器信息
+            info = server_scanner.query_server(ip, port, timeout=2)
+            if info["online"]:
+                text = "{}:{} | {}ms | {}/{}人 | {}".format(
+                    ip, port, latency,
+                    info["players_online"], info["players_max"],
+                    info["motd"][:30] if info["motd"] else "Minecraft Server")
+            else:
+                text = "{}:{} | {}ms".format(ip, port, latency)
+            self.lan_listbox.insert("end", text)
+
+    def _join_lan_server(self, event=None):
+        """加入局域网服务器"""
+        if not hasattr(self, '_lan_results') or not self._lan_results:
+            return
+        selection = self.lan_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("提示", "请先选择一个服务器")
+            return
+        idx = selection[0]
+        if idx < len(self._lan_results):
+            ip, port, latency = self._lan_results[idx]
+            self._join_server(ip, port, "局域网")
+
+    def _favorite_lan(self):
+        """收藏局域网服务器"""
+        import server_scanner
+        if not hasattr(self, '_lan_results') or not self._lan_results:
+            return
+        selection = self.lan_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("提示", "请先选择一个服务器")
+            return
+        idx = selection[0]
+        if idx < len(self._lan_results):
+            ip, port, latency = self._lan_results[idx]
+            name = simpledialog.askstring("收藏服务器", "服务器名称:",
+                                          initialvalue="局域网-" + ip, parent=self.root)
+            if name:
+                server_scanner.add_favorite(name, ip, port)
+                self._refresh_favorites()
+                messagebox.showinfo("成功", "已收藏: " + name)
+
+    def _add_favorite_dialog(self):
+        """添加服务器收藏对话框"""
+        import server_scanner
+        dialog = tk.Toplevel(self.root)
+        dialog.title("收藏服务器")
+        dialog.geometry("350x180")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        tk.Label(dialog, text="服务器名称:", font=("Arial", 10)).pack(pady=(15, 3))
+        name_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=name_var, width=30).pack()
+
+        tk.Label(dialog, text="服务器地址 (IP:端口):", font=("Arial", 10)).pack(pady=(10, 3))
+        addr_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=addr_var, width=30).pack()
+
+        def save():
+            name = name_var.get().strip()
+            addr = addr_var.get().strip()
+            if not name or not addr:
+                messagebox.showwarning("提示", "请填写名称和地址", parent=dialog)
+                return
+            if ":" in addr:
+                ip, port = addr.rsplit(":", 1)
+                try:
+                    port = int(port)
+                except ValueError:
+                    port = 25565
+            else:
+                ip = addr
+                port = 25565
+            server_scanner.add_favorite(name, ip, port)
+            self._refresh_favorites()
+            dialog.destroy()
+            messagebox.showinfo("成功", "服务器已收藏!")
+
+        ttk.Button(dialog, text="保存", command=save).pack(pady=15)
+
+    def _refresh_favorites(self):
+        """刷新服务器收藏列表"""
+        import server_scanner
+        self.fav_listbox.delete(0, "end")
+        favorites = server_scanner.load_favorites()
+        self._favorites = favorites
+        if not favorites:
+            self.fav_listbox.insert("end", "还没有收藏的服务器")
+            return
+
+        for s in favorites:
+            # 异步查询状态
+            info = server_scanner.query_server(s["ip"], s["port"], timeout=2)
+            if info["online"]:
+                status = "● 在线"
+                players = "{}/{}人".format(info["players_online"], info["players_max"])
+                latency = "{}ms".format(info["latency"])
+            else:
+                status = "○ 离线"
+                players = ""
+                latency = ""
+            text = "{} | {}:{} | {} {} {}".format(
+                s["name"], s["ip"], s["port"], status, players, latency)
+            self.fav_listbox.insert("end", text)
+
+    def _join_favorite(self, event=None):
+        """加入收藏的服务器"""
+        if not hasattr(self, '_favorites') or not self._favorites:
+            return
+        selection = self.fav_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("提示", "请先选择一个服务器")
+            return
+        idx = selection[0]
+        if idx < len(self._favorites):
+            s = self._favorites[idx]
+            self._join_server(s["ip"], s["port"], s["name"])
+
+    def _remove_favorite(self):
+        """删除收藏的服务器"""
+        import server_scanner
+        if not hasattr(self, '_favorites') or not self._favorites:
+            return
+        selection = self.fav_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("提示", "请先选择一个服务器")
+            return
+        idx = selection[0]
+        if idx < len(self._favorites):
+            s = self._favorites[idx]
+            if messagebox.askyesno("确认", "删除收藏: " + s["name"] + "?"):
+                server_scanner.remove_favorite(s["ip"], s["port"])
+                self._refresh_favorites()
+
+    def _refresh_all_servers(self):
+        """刷新所有服务器状态"""
+        self._refresh_favorites()
+        self._refresh_friends()
+        messagebox.showinfo("刷新完成", "服务器状态已刷新")
+
+    def _show_invite_dialog(self):
+        """显示邀请码生成对话框"""
+        import server_scanner
+        import friends as friends_mod
+        dialog = tk.Toplevel(self.root)
+        dialog.title("生成邀请码")
+        dialog.geometry("400x250")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        local_ip = server_scanner.get_local_ip()
+        tk.Label(dialog, text="你的局域网IP: " + local_ip,
+                 font=("Arial", 10)).pack(pady=(15, 5))
+
+        tk.Label(dialog, text="端口 (游戏里对局域网开放后显示):",
+                 font=("Arial", 10)).pack()
+        port_var = tk.StringVar(value="25565")
+        ttk.Entry(dialog, textvariable=port_var, width=15).pack(pady=5)
+
+        code_label = tk.Label(dialog, text="", font=("Consolas", 12, "bold"),
+                              fg="#6a1b9a")
+        code_label.pack(pady=10)
+
+        def generate():
+            port = port_var.get().strip()
+            try:
+                port = int(port)
+            except ValueError:
+                messagebox.showwarning("提示", "端口必须是数字", parent=dialog)
+                return
+            code = friends_mod.generate_invite_code(local_ip, port, "Voxel联机")
+            code_label.config(text=code)
+            self.root.clipboard_clear()
+            self.root.clipboard_append(code)
+
+        ttk.Button(dialog, text="📤 生成并复制邀请码",
+                   command=generate).pack(pady=10)
+        tk.Label(dialog, text="把邀请码发给好友，好友粘贴即可加入",
+                 fg="#888", font=("Arial", 9)).pack()
+
+    def _generate_invite(self):
+        """生成邀请码"""
+        import friends as friends_mod
+        ip = self.invite_ip_var.get().strip()
+        port = self.invite_port_var.get().strip()
+        if not ip:
+            messagebox.showwarning("提示", "请输入IP")
+            return
+        try:
+            port = int(port)
+        except ValueError:
+            messagebox.showwarning("提示", "端口必须是数字")
+            return
+        code = friends_mod.generate_invite_code(ip, port, "VoxelLauncher联机")
+        self.invite_code_label.config(text=code)
+        self.root.clipboard_clear()
+        self.root.clipboard_append(code)
+        messagebox.showinfo("邀请码已生成", "邀请码: " + code + "\n\n已复制到剪贴板，发给好友即可！")
+
+    def _join_by_code(self):
+        """通过邀请码加入"""
+        import friends as friends_mod
+        code = self.join_code_var.get().strip()
+        if not code:
+            messagebox.showwarning("提示", "请输入邀请码")
+            return
+        result = friends_mod.parse_invite_code(code)
+        if not result:
+            messagebox.showerror("错误", "无效的邀请码")
+            return
+        ip, port, note = result
+        self._join_server(ip, port, note)
+
+    def _join_server(self, ip, port, name=""):
+        """加入服务器"""
+        import friends as friends_mod
+        addr = "{}:{}".format(ip, port)
+        self.root.clipboard_clear()
+        self.root.clipboard_append(addr)
+        friends_mod.add_recent_server(ip, port, name)
+        self._refresh_recent()
+        messagebox.showinfo("加入服务器", "服务器地址已复制:\n" + addr +
+                            "\n\n在游戏里: 多人游戏 -> 添加服务器 -> 粘贴地址")
+
+    def _refresh_recent(self):
+        """刷新最近联机记录"""
+        import friends as friends_mod
+        self.recent_listbox.delete(0, "end")
+        recent = friends_mod.load_recent_servers()
+        for r in recent:
+            name = r.get("name", "") or r["ip"]
+            self.recent_listbox.insert("end", "{}:{} - {}".format(r["ip"], r["port"], name))
+
+    def _join_recent(self, event=None):
+        """加入最近联机的服务器"""
+        import friends as friends_mod
+        selection = self.recent_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("提示", "请先选择一个服务器")
+            return
+        recent = friends_mod.load_recent_servers()
+        idx = selection[0]
+        if idx < len(recent):
+            r = recent[idx]
+            self._join_server(r["ip"], r["port"], r.get("name", ""))
+
+    def _clear_recent(self):
+        """清空最近联机记录"""
+        import friends as friends_mod
+        if messagebox.askyesno("确认", "确定清空最近联机记录?"):
+            friends_mod._ensure_dir()
+            with open(friends_mod.RECENT_FILE, "w", encoding="utf-8") as f:
+                json.dump([], f)
+            self._refresh_recent()
+
+    def _refresh_friends(self):
+        """刷新好友列表"""
+        import friends as friends_mod
+        import threading
+        for widget in self.friends_inner.winfo_children():
+            widget.destroy()
+
+        friends_list = friends_mod.load_friends()
+        try:
+            self.friend_count_label.config(text="{} 位好友".format(len(friends_list)))
+        except Exception:
+            pass
+
+        if not friends_list:
+            tk.Label(self.friends_inner, text="还没有好友\n添加好友后可查看服务器状态并一键加入",
+                     bg="#f5f5f5", fg="#999", font=("Arial", 12),
+                     justify="center").pack(pady=50)
+            return
+
+        for friend in friends_list:
+            self._create_friend_card(friend)
+
+        # 异步检测所有好友服务器状态
+        def _ping_all():
+            for friend in friends_list:
+                ip = friend.get("server_ip", "")
+                port = friend.get("server_port", 25565)
+                if ip:
+                    online, ping, desc = friends_mod.ping_server(ip, port)
+                    friend["_status"] = (online, ping, desc)
+            self.root.after(0, lambda: self._update_friend_status(friends_list))
+
+        threading.Thread(target=_ping_all, daemon=True).start()
+
+    def _update_friend_status(self, friends_list):
+        """更新好友服务器状态显示"""
+        # 重新渲染列表（简化处理，直接刷新）
+        for widget in self.friends_inner.winfo_children():
+            widget.destroy()
+        for friend in friends_list:
+            self._create_friend_card(friend, show_status=True)
+
+    def _create_friend_card(self, friend, show_status=False):
+        """创建单个好友卡片"""
+        import friends as friends_mod
+        card = tk.Frame(self.friends_inner, bg="white", relief="raised", bd=1)
+        card.pack(fill="x", padx=5, pady=3)
+
+        # 头像
+        avatar_frame = tk.Frame(card, bg="white", width=55, height=55)
+        avatar_frame.pack(side="left", padx=8, pady=8)
+        avatar_frame.pack_propagate(False)
+        avatar_label = tk.Label(avatar_frame, text="🧑", bg="#e3f2fd",
+                                font=("Arial", 22))
+        avatar_label.pack(fill="both", expand=True)
+        self._load_friend_avatar(avatar_label, friend["username"])
+
+        # 信息
+        info_frame = tk.Frame(card, bg="white")
+        info_frame.pack(side="left", fill="both", expand=True, pady=5)
+
+        name_frame = tk.Frame(info_frame, bg="white")
+        name_frame.pack(fill="x")
+        tk.Label(name_frame, text=friend["username"], bg="white",
+                 font=("Arial", 12, "bold")).pack(side="left")
+
+        # 服务器状态
+        ip = friend.get("server_ip", "")
+        if ip:
+            if "_status" in friend:
+                online, ping, desc = friend["_status"]
+            else:
+                online, ping, desc = False, 0, "检测中..."
+            status_color = "#4caf50" if online else "#999"
+            status_text = "● " + desc if online else "○ " + desc
+            tk.Label(name_frame, text=status_text, bg="white", fg=status_color,
+                     font=("Arial", 8)).pack(side="left", padx=8)
+
+        if friend.get("note"):
+            tk.Label(info_frame, text="📝 " + friend["note"], bg="white",
+                     fg="#666", font=("Arial", 9)).pack(anchor="w")
+        if ip:
+            port = friend.get("server_port", 25565)
+            tk.Label(info_frame, text="🌐 {}:{}".format(ip, port), bg="white",
+                     fg="#2196f3", font=("Arial", 9)).pack(anchor="w")
+
+        # 操作按钮
+        btn_frame = tk.Frame(card, bg="white")
+        btn_frame.pack(side="right", padx=5, pady=5)
+
+        def join():
+            self._join_server(ip, friend.get("server_port", 25565), friend["username"])
+
+        def copy_id():
+            self.root.clipboard_clear()
+            self.root.clipboard_append(friend["username"])
+
+        def delete():
+            if messagebox.askyesno("确认", "删除好友 " + friend["username"] + "?"):
+                friends_mod.remove_friend(friend["username"])
+                self._refresh_friends()
+
+        if ip:
+            ttk.Button(btn_frame, text="🚀 加入", command=join, width=8).pack(pady=1)
+        ttk.Button(btn_frame, text="📋 复制ID", command=copy_id, width=8).pack(pady=1)
+        ttk.Button(btn_frame, text="🗑 删除", command=delete, width=8).pack(pady=1)
+
+    def _load_friend_avatar(self, label, username):
+        """异步加载好友头像"""
+        import threading
+        def _load():
+            try:
+                import urllib.request
+                from PIL import Image, ImageTk
+                import io
+                url = f"https://crafatar.com/avatars/{username}?size=64&overlay"
+                req = urllib.request.Request(url, headers={"User-Agent": "VoxelLauncher"})
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    img_data = resp.read()
+                img = Image.open(io.BytesIO(img_data))
+                img = img.resize((50, 50), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
+                self.root.after(0, lambda: self._set_avatar(label, photo))
+            except Exception:
+                pass
+        threading.Thread(target=_load, daemon=True).start()
+
+    def _set_avatar(self, label, photo):
+        label.config(image=photo, text="")
+        label.image = photo
+
+    def _add_friend(self):
+        """添加好友"""
+        import friends as friends_mod
+        username = self.friend_name_var.get().strip()
+        if not username:
+            messagebox.showwarning("提示", "请输入游戏ID")
+            return
+        note = self.friend_note_var.get().strip()
+        server_ip = self.friend_ip_var.get().strip()
+        try:
+            server_port = int(self.friend_port_var.get().strip())
+        except ValueError:
+            server_port = 25565
+
+        success, msg = friends_mod.add_friend(username, note, server_ip, server_port)
+        if success:
+            messagebox.showinfo("成功", "好友 " + username + " 添加成功！")
+            self.friend_name_var.set("")
+            self.friend_note_var.set("")
+            self.friend_ip_var.set("")
+            self.friend_port_var.set("25565")
+            self._refresh_friends()
+        else:
+            messagebox.showerror("失败", msg)
+
+    def _add_friend(self):
+        """添加好友"""
+        import friends as friends_mod
+        username = self.friend_name_var.get().strip()
+        if not username:
+            messagebox.showwarning("提示", "请输入游戏ID")
+            return
+        note = self.friend_note_var.get().strip()
+        server_ip = self.friend_ip_var.get().strip()
+
+        success, msg = friends_mod.add_friend(username, note, server_ip)
+        if success:
+            messagebox.showinfo("成功", "好友 " + username + " 添加成功！")
+            self.friend_name_var.set("")
+            self.friend_note_var.set("")
+            self.friend_ip_var.set("")
+            self._refresh_friends()
+        else:
+            messagebox.showerror("失败", msg)
 
     def _open_launcher_dir(self):
         """打开启动器目录"""
@@ -9497,6 +10952,210 @@ A: 下载后进入游戏 -> 选项 -> 资源包 -> 选中启用
                 self._post("log", "下载失败: {} - {}".format(task.file_name, exc))
         self._thread(_worker)
 
+    def _refresh_points(self):
+        """刷新积分显示"""
+        try:
+            import points
+            balance = points.get_balance()
+            if hasattr(self, '_points_label'):
+                self._points_label.config(text="💰 {} 积分".format(balance))
+        except Exception:
+            pass
+        self.root.after(3000, self._refresh_points)
+
+    def _add_points(self, amount, reason=""):
+        """增加积分"""
+        try:
+            import points
+            points.add_points(amount, reason)
+            self._refresh_points()
+        except Exception:
+            pass
+
+    def _open_points_shop(self):
+        """打开积分兑换商店"""
+        import points
+        import bridge
+        import tkinter as tk
+        from tkinter import ttk, messagebox
+
+        win = tk.Toplevel(self.root)
+        win.title("🎁 积分兑换商店")
+        win.geometry("700x550")
+        win.configure(bg="#f5f5f5")
+        win.transient(self.root)
+        win.grab_set()
+
+        # 顶部积分显示
+        top_frame = tk.Frame(win, bg="#ff8800", height=60)
+        top_frame.pack(fill="x")
+        top_frame.pack_propagate(False)
+        balance = points.get_balance()
+        points_label = tk.Label(top_frame, text="💰 当前积分: {}".format(balance),
+                                bg="#ff8800", fg="white",
+                                font=("Arial", 16, "bold"))
+        points_label.pack(side="left", padx=20)
+        tk.Label(top_frame, text="挖矿、战斗都能赚积分！兑换直接发到游戏！",
+                 bg="#ff8800", fg="white",
+                 font=("Arial", 10)).pack(side="left", padx=10)
+
+        # 玩家名输入
+        name_frame = tk.Frame(win, bg="#f5f5f5")
+        name_frame.pack(fill="x", padx=10, pady=8)
+        tk.Label(name_frame, text="游戏ID:", bg="#f5f5f5",
+                 font=("Arial", 10)).pack(side="left")
+        player_name_var = tk.StringVar(value="exwnv")
+        name_entry = ttk.Entry(name_frame, textvariable=player_name_var, width=20)
+        name_entry.pack(side="left", padx=5)
+
+        # 检测联动状态
+        bridge_status = "✅ 游戏联动已连接" if bridge.is_bridge_running() else "⚠️ 游戏未启动/未装联动Mod"
+        bridge_color = "#00aa00" if bridge.is_bridge_running() else "#ff8800"
+        tk.Label(name_frame, text=bridge_status, bg="#f5f5f5", fg=bridge_color,
+                 font=("Arial", 9, "bold")).pack(side="left", padx=15)
+
+        # 物品列表
+        list_frame = tk.Frame(win, bg="#f5f5f5")
+        list_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+        columns = ("icon", "name", "cost", "desc")
+        tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=12)
+        tree.heading("icon", text="")
+        tree.heading("name", text="物品")
+        tree.heading("cost", text="积分")
+        tree.heading("desc", text="说明")
+        tree.column("icon", width=50, anchor="center")
+        tree.column("name", width=150)
+        tree.column("cost", width=80, anchor="center")
+        tree.column("desc", width=300)
+
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        for item in points.REDEEMABLE_ITEMS:
+            tree.insert("", "end", values=(
+                item["icon"], item["name"],
+                "{} 💰".format(item["cost"]), item["desc"]
+            ))
+
+        def do_redeem():
+            selected = tree.selection()
+            if not selected:
+                messagebox.showwarning("提示", "请先选择要兑换的物品", parent=win)
+                return
+            idx = tree.index(selected[0])
+            item = points.REDEEMABLE_ITEMS[idx]
+            player_name = player_name_var.get().strip()
+            if not player_name:
+                messagebox.showwarning("提示", "请输入游戏ID", parent=win)
+                return
+
+            success, result, new_balance = points.redeem_item(item["id"], player_name)
+            if not success:
+                messagebox.showerror("兑换失败", result, parent=win)
+                return
+
+            # 更新积分显示
+            points_label.config(text="💰 当前积分: {}".format(new_balance))
+            if hasattr(self, '_points_label'):
+                self._points_label.config(text="💰 {} 积分".format(new_balance))
+
+            # 结果窗口
+            result_win = tk.Toplevel(win)
+            result_win.title("兑换结果")
+            result_win.geometry("520x400")
+            result_win.configure(bg="#f5f5f5")
+            result_win.transient(win)
+            result_win.grab_set()
+
+            tk.Label(result_win, text="✅ 兑换成功！", bg="#f5f5f5",
+                     font=("Arial", 16, "bold"), fg="#00aa00").pack(pady=10)
+            tk.Label(result_win, text="物品: {}".format(item["name"]),
+                     bg="#f5f5f5", font=("Arial", 11)).pack()
+            tk.Label(result_win, text="剩余积分: {}".format(new_balance),
+                     bg="#f5f5f5", font=("Arial", 11)).pack(pady=5)
+
+            # 尝试通过 Bridge 发送
+            bridge_ok = bridge.is_bridge_running()
+            if bridge_ok:
+                tk.Label(result_win, text="🔗 正在发送到游戏背包...",
+                         bg="#f5f5f5", font=("Arial", 10), fg="#0088ff").pack(pady=(10, 5))
+
+                send_results = []
+                if "multi" in item:
+                    for item_id in item["multi"]:
+                        ok, msg = bridge.send_item(item_id, 1)
+                        send_results.append((item_id, ok, msg))
+                else:
+                    ok, msg = bridge.send_item(item["item_id"], item["count"])
+                    send_results.append((item["item_id"], ok, msg))
+
+                result_text = ""
+                all_ok = True
+                for item_id, ok, msg in send_results:
+                    status = "✅" if ok else "❌"
+                    short_name = item_id.split(":")[-1] if ":" in item_id else item_id
+                    result_text += "{} {}: {}\n".format(status, short_name, msg)
+                    if not ok:
+                        all_ok = False
+
+                tk.Label(result_win, text=result_text, bg="#f5f5f5",
+                         font=("Consolas", 9), justify="left", fg="#333").pack(padx=20, pady=5)
+
+                if all_ok:
+                    tk.Label(result_win, text="🎉 物品已直接发送到游戏背包！",
+                             bg="#f5f5f5", font=("Arial", 11, "bold"), fg="#00aa00").pack(pady=5)
+                else:
+                    tk.Label(result_win, text="部分发送失败，可用下方命令手动获取",
+                             bg="#f5f5f5", font=("Arial", 10), fg="#ff6600").pack(pady=5)
+            else:
+                tk.Label(result_win, text="⚠️ 游戏未启动或未安装联动Mod",
+                         bg="#f5f5f5", font=("Arial", 10), fg="#ff8800").pack(pady=(10, 5))
+                tk.Label(result_win, text="启动游戏并安装联动Mod后可自动发送",
+                         bg="#f5f5f5", font=("Arial", 9), fg="#666").pack()
+
+            # 备用命令
+            cmd_text = "\n".join(result)
+            tk.Label(result_win, text="备用命令（游戏里按T粘贴）:",
+                     bg="#f5f5f5", font=("Arial", 9), fg="#888").pack(pady=(10, 3))
+            cmd_box = tk.Text(result_win, height=3, width=50, font=("Consolas", 9))
+            cmd_box.pack(padx=20, pady=3)
+            cmd_box.insert("1.0", cmd_text)
+            cmd_box.config(state="disabled")
+
+            def copy_cmd():
+                self.root.clipboard_clear()
+                self.root.clipboard_append(cmd_text)
+                messagebox.showinfo("已复制", "命令已复制到剪贴板", parent=result_win)
+
+            rbtn_frame = tk.Frame(result_win, bg="#f5f5f5")
+            rbtn_frame.pack(pady=10)
+            ttk.Button(rbtn_frame, text="📋 复制命令", command=copy_cmd).pack(side="left", padx=5)
+            ttk.Button(rbtn_frame, text="关闭", command=result_win.destroy).pack(side="left", padx=5)
+
+        # 底部按钮
+        btn_frame = tk.Frame(win, bg="#f5f5f5")
+        btn_frame.pack(fill="x", padx=10, pady=10)
+        ttk.Button(btn_frame, text="🎁 兑换选中物品",
+                   command=do_redeem).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="📖 积分获取方式",
+                   command=lambda: self._show_points_guide(win)).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="关闭",
+                   command=win.destroy).pack(side="right", padx=5)
+
+    def _show_points_guide(self, parent):
+        """显示积分获取方式"""
+        import points
+        from tkinter import messagebox
+        ways = points.get_earn_ways()
+        text = "获取积分的方式:\n\n"
+        for w in ways:
+            text += "{} {}: +{} 积分\n".format(w["icon"], w["action"], w["points"])
+        text += "\n挖矿越稀有，积分越多！"
+        messagebox.showinfo("积分获取方式", text, parent=parent)
+
 def main():
     if HAS_DND:
         root = TkinterDnD.Tk()
@@ -9508,3 +11167,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+    # ---------------- 积分兑换系统 ----------------

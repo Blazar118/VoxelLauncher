@@ -85,3 +85,34 @@ def send_inventory(inventory, timeout=2.0):
             failed += 1
             details.append(f"✗ {item_id} x{count}: {msg}")
     return success, failed, details
+
+
+def kill_nearby_mobs(mob_type, radius=32, timeout=3.0):
+    """
+    击杀玩家附近指定类型的怪物。
+    mob_type: 如 "zombie", "skeleton", "spider"
+    radius: 击杀半径(格), 默认32
+    返回 (是否成功, 击杀数量, 消息)
+    """
+    if not is_bridge_running():
+        return False, 0, "联动 Mod 未运行(游戏未启动或未安装 Mod)"
+
+    try:
+        payload = json.dumps({"mob": mob_type, "radius": radius},
+                              separators=(',', ':')).encode("utf-8")
+        req = urllib.request.Request(
+            f"{BRIDGE_URL}/kill_nearby",
+            data=payload,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            if data.get("status") == "ok":
+                killed = data.get("killed", 0)
+                return True, killed, f"已击杀附近 {killed} 只 {mob_type}"
+            return False, 0, data.get("error", "未知错误")
+    except urllib.error.HTTPError as e:
+        return False, 0, f"HTTP 错误 {e.code}"
+    except Exception as e:
+        return False, 0, f"发送失败: {e}"

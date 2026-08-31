@@ -619,6 +619,112 @@ def get_skeleton_texture(game_dir, cache_dir=None, scale=4):
         return None
 
 
+def get_spider_texture(game_dir, cache_dir=None, scale=4):
+    """从游戏 jar 提取蜘蛛贴图, 拼接正面视图"""
+    if not HAS_PIL:
+        return None
+    if cache_dir is None:
+        cache_dir = Path(os.environ.get("APPDATA", ".")) / "VoxelLauncher" / "sounds"
+    cache_dir = Path(cache_dir)
+    cached = cache_dir / f"spider_front_x{scale}.png"
+    if cached.exists():
+        return str(cached)
+    jar_path = _find_game_jar(game_dir)
+    if not jar_path:
+        return None
+    try:
+        import zipfile
+        with zipfile.ZipFile(jar_path, "r") as z:
+            with z.open("assets/minecraft/textures/entity/spider/spider.png") as f:
+                tex = Image.open(f).convert("RGBA")
+        # 蜘蛛正面: 头(8x8) + 身体(16x12) + 腿(简化)
+        front = Image.new("RGBA", (16, 20), (0, 0, 0, 0))
+        head = tex.crop((32, 0, 40, 8))
+        body = tex.crop((0, 0, 16, 12))
+        front.paste(head, (4, 0))
+        front.paste(body, (0, 8))
+        front_big = front.resize((16 * scale, 20 * scale), Image.NEAREST)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        front_big.save(str(cached))
+        return str(cached)
+    except Exception:
+        return None
+
+
+def get_iron_golem_texture(game_dir, cache_dir=None, scale=4):
+    """从游戏 jar 提取铁傀儡贴图, 拼接正面视图"""
+    if not HAS_PIL:
+        return None
+    if cache_dir is None:
+        cache_dir = Path(os.environ.get("APPDATA", ".")) / "VoxelLauncher" / "sounds"
+    cache_dir = Path(cache_dir)
+    cached = cache_dir / f"iron_golem_front_x{scale}.png"
+    if cached.exists():
+        return str(cached)
+    jar_path = _find_game_jar(game_dir)
+    if not jar_path:
+        return None
+    try:
+        import zipfile
+        with zipfile.ZipFile(jar_path, "r") as z:
+            with z.open("assets/minecraft/textures/entity/iron_golem/iron_golem.png") as f:
+                tex = Image.open(f).convert("RGBA")
+        # 铁傀儡正面: 头(12x12) + 身体(16x20) + 腿(各6x12) + 手臂(各4x20)
+        front = Image.new("RGBA", (24, 44), (0, 0, 0, 0))
+        head = tex.crop((0, 0, 12, 12))
+        body = tex.crop((16, 16, 32, 36))
+        arm_l = tex.crop((32, 16, 36, 36))
+        arm_r = tex.crop((36, 16, 40, 36))
+        leg_l = tex.crop((0, 16, 6, 28))
+        leg_r = tex.crop((6, 16, 12, 28))
+        front.paste(head, (6, 0))
+        front.paste(arm_l, (0, 12))
+        front.paste(body, (4, 12))
+        front.paste(arm_r, (20, 12))
+        front.paste(leg_l, (6, 32))
+        front.paste(leg_r, (12, 32))
+        front_big = front.resize((24 * scale, 44 * scale), Image.NEAREST)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        front_big.save(str(cached))
+        return str(cached)
+    except Exception:
+        return None
+
+
+def get_snow_golem_texture(game_dir, cache_dir=None, scale=4):
+    """从游戏 jar 提取雪傀儡贴图, 拼接正面视图"""
+    if not HAS_PIL:
+        return None
+    if cache_dir is None:
+        cache_dir = Path(os.environ.get("APPDATA", ".")) / "VoxelLauncher" / "sounds"
+    cache_dir = Path(cache_dir)
+    cached = cache_dir / f"snow_golem_front_x{scale}.png"
+    if cached.exists():
+        return str(cached)
+    jar_path = _find_game_jar(game_dir)
+    if not jar_path:
+        return None
+    try:
+        import zipfile
+        with zipfile.ZipFile(jar_path, "r") as z:
+            with z.open("assets/minecraft/textures/entity/snow_golem.png") as f:
+                tex = Image.open(f).convert("RGBA")
+        # 雪傀儡正面: 南瓜头(8x8) + 身体(12x12) + 下半身(14x14)
+        front = Image.new("RGBA", (14, 34), (0, 0, 0, 0))
+        head = tex.crop((0, 0, 8, 8))
+        body = tex.crop((0, 8, 12, 20))
+        bottom = tex.crop((0, 20, 14, 34))
+        front.paste(head, (3, 0))
+        front.paste(body, (1, 8))
+        front.paste(bottom, (0, 20))
+        front_big = front.resize((14 * scale, 34 * scale), Image.NEAREST)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        front_big.save(str(cached))
+        return str(cached)
+    except Exception:
+        return None
+
+
 # ---------------- 通用贴图提取 ----------------
 def get_block_texture(game_dir, block_name, cache_dir=None, scale=4):
     """

@@ -9,6 +9,7 @@ VoxelLauncher - Modrinth 开放平台模块
 - 实例导出为标准 mrpack(通过 sha1 反查 Modrinth 版本)
 """
 import json
+import time
 import zipfile
 from pathlib import Path
 
@@ -18,12 +19,25 @@ from downloader import download_file, sha1_of_file
 
 API = "https://api.modrinth.com/v2"
 
+# 搜索缓存: key -> (timestamp, data)
+_search_cache = {}
+CACHE_TTL = 300  # 5分钟缓存
 
-def _get(path, params=None):
-    resp = requests.get(API + path, params=params, timeout=30,
-                        headers={"User-Agent": "VoxelLauncher/1.0.0"})
-    resp.raise_for_status()
-    return resp.json()
+
+def _get(path, params=None, retries=2):
+    """带重试的 GET 请求"""
+    last_err = None
+    for attempt in range(retries):
+        try:
+            resp = requests.get(API + path, params=params, timeout=20,
+                                headers={"User-Agent": "VoxelLauncher/1.0.0"})
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            last_err = e
+            if attempt < retries - 1:
+                time.sleep(1)
+    raise last_err
 
 
 # ---------------------------------------------------------------
@@ -34,7 +48,20 @@ def search_projects(query="", game_version=None, loader=None,
     """
     搜索模组/资源包/数据包/光影/整合包, 返回 hits 列表。
     project_type: mod / resourcepack / datapack / shader / modpack 等。
+    带5分钟缓存, 相同条件搜索直接返回缓存结果。
     """
+    # 生成缓存 key
+    cache_key = json.dumps({
+        "q": query, "gv": game_version, "loader": loader,
+        "pt": project_type, "limit": limit, "offset": offset
+    }, sort_keys=True)
+
+    # 检查缓存
+    if cache_key in _search_cache:
+        ts, data = _search_cache[cache_key]
+        if time.time() - ts < CACHE_TTL:
+            return data
+
     facets = []
     if game_version:
         facets.append(["versions:" + game_version])
@@ -46,7 +73,16 @@ def search_projects(query="", game_version=None, loader=None,
     if facets:
         params["facets"] = json.dumps(facets)
     data = _get("/search", params=params)
-    return data.get("hits", [])
+    hits = data.get("hits", [])
+
+    # 存入缓存
+    _search_cache[cache_key] = (time.time(), hits)
+    # 缓存超过100条就清理旧的
+    if len(_search_cache) > 100:
+        oldest = min(_search_cache.keys(), key=lambda k: _search_cache[k][0])
+        del _search_cache[oldest]
+
+    return hits
 
 
 def get_project(project_id):

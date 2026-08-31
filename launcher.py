@@ -259,11 +259,12 @@ class GameProcess:
             pass
 
 
-def launch_game(instance, account, java_path, log_cb=None, on_exit=None):
+def launch_game(instance, account, java_path, log_cb=None, on_exit=None, server_address=None):
     """
     启动游戏。
     - 先做完整性校验, 有问题抛 RuntimeError
     - 微软账号失效自动刷新
+    - server_address: 要连接的服务器地址(可选), 会自动加入游戏
     - 返回 GameProcess
     """
     import accounts
@@ -292,6 +293,9 @@ def launch_game(instance, account, java_path, log_cb=None, on_exit=None):
     java_path = java_manager.ensure_console_java(java_path)
 
     cmd = build_command(instance, account, java_path, version_data)
+    # 如果指定了服务器地址, 加上 --server 参数自动连接
+    if server_address:
+        cmd += ["--server", server_address]
     if log_cb:
         log_cb("启动命令: " + " ".join(cmd))
 

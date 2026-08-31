@@ -1926,10 +1926,11 @@ class VoxelApp:
             pass
 
     def _get_villager_discount(self):
-        """获取村民交易折扣: 血量越低折扣越大"""
-        ratio = max(0, self._villager_hp / self._villager_max_hp)
-        # 血量100%=原价, 血量0%=5折
-        return 0.5 + 0.5 * ratio
+        """获取村民交易折扣: 血量越低降价越便宜(非线性, 最低约1折)"""
+        ratio = max(0, min(1, self._villager_hp / self._villager_max_hp))
+        # 非线性曲线: 血量100%=原价(1.0), 血量0%=约1折(0.1)
+        # 前期掉血降价温和, 快没血时价格极低, 体现"生命越低越便宜"
+        return 0.1 + 0.9 * (ratio ** 1.8)
 
     def _attack_villager(self, win):
         """攻击村民: 扣血, 显示伤害, 有概率生气涨价(原版MC行为)"""

@@ -3553,7 +3553,7 @@ class VoxelApp:
         ver_entry = tk.Entry(dlg, width=40)
         ver_entry.pack(padx=20)
 
-        merged_var = tk.BooleanVar(value=False)
+        merged_var = tk.BooleanVar(value=True)  # 默认合并模式, 与 PCL 一致
         tk.Checkbutton(dlg, text="PCL2 合并模式 (版本文件夹=游戏目录, mods/saves 都在版本目录里)",
                        variable=merged_var).pack(anchor="w", padx=20, pady=(10, 5))
 
@@ -3829,29 +3829,24 @@ class VoxelApp:
         vid = shown[sel[0]]["id"]
         loader = self.loader_var.get()
 
-        # 自定义对话框: 实例名 + 合并模式
+        # 自定义对话框: 仅实例名 (与 PCL 一致, 默认自动使用合并模式, 不再询问)
         dlg = tk.Toplevel(self.root)
         dlg.title("安装 " + loader)
-        dlg.geometry("400x200")
+        dlg.geometry("380x150")
         dlg.resizable(False, False)
         dlg.transient(self.root)
         dlg.grab_set()
-        result = {"name": "", "merged": False, "ok": False}
+        result = {"name": "", "ok": False}
 
         tk.Label(dlg, text="实例名:").pack(anchor="w", padx=20, pady=(15, 2))
         name_entry = tk.Entry(dlg, width=45)
         name_entry.insert(0, "{}-{}".format(vid, loader))
         name_entry.pack(padx=20)
-
-        merged_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(dlg, text="PCL2 合并模式 (版本文件夹=游戏目录)",
-                       variable=merged_var).pack(anchor="w", padx=20, pady=(10, 5))
-        tk.Label(dlg, text="合并模式: mods/saves/config 都放在版本文件夹里, 和 PCL2 一样",
-                 fg="gray", font=("Arial", 8)).pack(anchor="w", padx=20)
+        tk.Label(dlg, text="安装模组加载器默认使用合并模式 (mods/saves 都在版本文件夹里, 同 PCL)",
+                 fg="gray", font=("Arial", 8)).pack(anchor="w", padx=20, pady=(6, 0))
 
         def _ok():
             result["name"] = name_entry.get().strip()
-            result["merged"] = merged_var.get()
             result["ok"] = True
             dlg.destroy()
 
@@ -3859,7 +3854,7 @@ class VoxelApp:
             dlg.destroy()
 
         btn_frame = tk.Frame(dlg)
-        btn_frame.pack(pady=15)
+        btn_frame.pack(pady=10)
         tk.Button(btn_frame, text="确定", width=10, command=_ok).pack(side="left", padx=10)
         tk.Button(btn_frame, text="取消", width=10, command=_cancel).pack(side="left", padx=10)
 
@@ -3869,7 +3864,8 @@ class VoxelApp:
         if not result["ok"] or not result["name"]:
             return
         inst_name = result["name"]
-        use_merged = result["merged"] and loader == "Fabric"  # 目前只支持 Fabric 合并
+        # 与 PCL 一致: 只要安装了模组加载器就默认使用合并模式, 不再弹出询问
+        use_merged = True
 
         self.dl_btn.config(state="disabled")
         loader_ver = self.loader_ver_var.get()
@@ -3885,18 +3881,19 @@ class VoxelApp:
 
         def _worker():
             try:
-                if use_merged:
+                if use_merged and loader == "fabric":
                     # PCL2 合并模式: 直接创建合并式版本文件夹
                     version_id = installer_mod.install_fabric_merged(
                         vid, loader_version=loader_ver, api_version=api_ver,
                         progress_cb=lambda msg, c, t: self._post(
                             "vdl_status", msg))
                 else:
+                    # 其他加载器(或分离): 普通安装
                     version_id = installer_mod.install_loader(
                         vid, loader, loader_version=loader_ver, api_version=api_ver,
                         progress_cb=lambda msg, c, t: self._post(
                             "vdl_status", msg))
-                # 创建实例
+                # 创建实例 (默认合并模式, 合并模式下会在版本文件夹内建 mods/saves 等)
                 instance_mod.create_instance(
                     inst_name.strip(), version_id,
                     java_path=self._selected_java(),

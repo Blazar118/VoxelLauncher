@@ -144,7 +144,8 @@ def build_exe():
     hidden = ["tkinter", "PIL", "PIL.Image", "PIL.ImageTk", "requests",
               "points", "bridge", "friends", "server_scanner", "ai_chat",
               "sounds", "config", "skin_editor", "multiplayer",
-              "server_manager", "crash_analyzer", "mod_checker", "version"]
+              "server_manager", "crash_analyzer", "mod_checker", "version",
+              "fun_stuff"]
     cmd = [PY, "-m", "PyInstaller", "--onefile", "--windowed",
            "--name", "VoxelLauncher",
            "--icon", os.path.join(ROOT, "app.ico")]

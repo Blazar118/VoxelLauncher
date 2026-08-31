@@ -569,7 +569,15 @@ class VoxelApp:
                    width=8).pack(side="right", padx=2)
         ttk.Button(player_bar, text="🏆 成就", command=self._open_achievements,
                    width=8).pack(side="right", padx=2)
+        ttk.Button(player_bar, text="📊 周报", command=self._open_week_report,
+                   width=6).pack(side="right", padx=2)
+        ttk.Button(player_bar, text="🎴 抽卡", command=self._open_card_draw,
+                   width=6).pack(side="right", padx=2)
+        self.luck_label = tk.Label(player_bar, text="", bg="#2b2b2b",
+                                   font=("Arial", 10, "bold"))
+        self.luck_label.pack(side="right", padx=(4, 6))
         self._update_player_level_display()
+        self._update_luck_display()
 
         # 账号区
         box = ttk.LabelFrame(f, text="账号")
@@ -3293,11 +3301,23 @@ class VoxelApp:
             self.launch_btn.config(text="游戏运行中", state="disabled")
             self.stop_btn.config(state="normal")
             self._game_start_time = time.time()
+            self._session_instance = (self.current_instance.get("name")
+                                      if self.current_instance else "未知实例")
         elif kind == "game_exited":
             self.launch_btn.config(text="启动游戏", state="normal")
             self.stop_btn.config(state="disabled")
             self.game_proc = None
             self.status_lbl.config(text="游戏已退出")
+            # 记录游玩时长(游戏周报)
+            try:
+                if hasattr(self, "_game_start_time"):
+                    elapsed = time.time() - self._game_start_time
+                    if elapsed >= 15:
+                        import fun_stuff
+                        fun_stuff.record_session(
+                            getattr(self, "_session_instance", "未知实例"), elapsed)
+            except Exception:
+                pass
             # 崩溃检测: 游戏运行少于15秒认为是崩溃
             if hasattr(self, "_game_start_time"):
                 elapsed = time.time() - self._game_start_time
@@ -5575,6 +5595,179 @@ class VoxelApp:
             self._xp_bar_fg.config(width=int(bar_w * pct))
         except Exception:
             pass
+
+    # ---------------- 今日人品 / 命运卡 / 游戏周报 ----------------
+    def _update_luck_display(self):
+        """更新启动页今日人品显示"""
+        try:
+            import fun_stuff
+            luck = fun_stuff.today_luck()
+            name, color = fun_stuff.luck_level(luck)
+            if hasattr(self, "luck_label"):
+                self.luck_label.config(text="今日人品 {} {}".format(luck, name),
+                                       fg=color)
+        except Exception:
+            pass
+
+    def _copy_luck(self, luck, luck_name):
+        """复制今日人品文案"""
+        import fun_stuff
+        text = "今日人品: {} ({}) - {}".format(luck, luck_name,
+                                                fun_stuff.luck_saying(luck))
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        messagebox.showinfo("已复制", "今日人品已复制到剪贴板:\n" + text)
+
+    def _open_card_draw(self):
+        """命运卡抽卡窗口(人品影响稀有度, 收集图鉴)"""
+        try:
+            import fun_stuff
+            import points
+        except Exception as exc:
+            messagebox.showerror("错误", str(exc))
+            return
+        luck = fun_stuff.today_luck()
+        luck_name, luck_color = fun_stuff.luck_level(luck)
+        win = tk.Toplevel(self.root)
+        win.title("命运卡抽卡")
+        win.geometry("460x560")
+        win.transient(self.root)
+        # 顶部: 今日人品
+        tk.Label(win, text="今日人品: {} ({})".format(luck, luck_name),
+                 font=("Arial", 13, "bold"), fg=luck_color).pack(pady=(12, 2))
+        tk.Label(win, text=fun_stuff.luck_saying(luck), fg="#888").pack()
+        # 卡面显示区
+        card_frame = tk.Frame(win)
+        card_frame.pack(pady=10)
+        self._card_display = tk.Label(card_frame,
+                                      text="点击下方抽卡", font=("Arial", 16, "bold"),
+                                      fg="#999", bg="#f5f5f5", width=32, height=5,
+                                      relief="solid", bd=2, wraplength=380)
+        self._card_display.pack()
+        self._card_sub = tk.Label(card_frame, text="", fg="#888",
+                                  font=("Arial", 10), justify="center",
+                                  wraplength=380)
+        self._card_sub.pack(pady=6)
+        # 收集进度
+        collected = fun_stuff.get_collected()
+        self._card_progress = tk.Label(
+            win, text="图鉴: {}/{}".format(len(collected), len(fun_stuff.CARDS)),
+            fg="#666", font=("Arial", 10))
+        self._card_progress.pack()
+        # 剩余免费次数
+        self._card_left = tk.Label(win, text="", fg="#888")
+        self._card_left.pack(pady=2)
+
+        def _refresh_left():
+            self._card_left.config(text="今日剩余免费抽卡: {} 次".format(
+                fun_stuff.get_remaining_free_draws()))
+
+        _refresh_left()
+
+        def _do_draw():
+            remaining = fun_stuff.get_remaining_free_draws()
+            if remaining <= 0:
+                ok, _ = points.spend_points(fun_stuff.CARD_COST, "命运卡抽卡")
+                if not ok:
+                    messagebox.showinfo(
+                        "积分不足",
+                        "今天免费次数用完了\n"
+                        "再抽一次需要 {} 积分\n当前积分: {}".format(
+                            fun_stuff.CARD_COST, points.get_balance()))
+                    return
+                fun_stuff.consume_draw()
+            else:
+                fun_stuff.consume_draw()
+            card, rarity = fun_stuff.draw_card(luck)
+            rar_name = fun_stuff.RARITY_NAMES[rarity]
+            rar_color = fun_stuff.RARITY_COLORS[rarity]
+            is_new, total, allc = fun_stuff.collect_card(card[0])
+            tag = "✨ 新卡!" if is_new else "(重复)"
+            self._card_display.config(text=card[1], fg=rar_color,
+                                      bg="#fffbe6" if rarity >= 3 else "#f5f5f5")
+            self._card_sub.config(
+                text="[{}]  {}\n\n{}".format(rar_name, tag, card[3]),
+                fg=rar_color)
+            self._card_progress.config(text="图鉴: {}/{}".format(total, allc))
+            _refresh_left()
+            if total >= allc:
+                self._card_sub.config(
+                    text=self._card_sub.cget("text") + "\n\n🌟 图鉴集齐! 你就是欧皇!")
+                try:
+                    self._log("🎉 命运卡图鉴全部集齐! 隐藏奖励已解锁")
+                except Exception:
+                    pass
+                # 隐藏彩蛋: 关于页标题悄悄变成金色(低调, 自己发现)
+                try:
+                    if hasattr(self, "about_title_label"):
+                        self.about_title_label.config(fg="#ffd700")
+                except Exception:
+                    pass
+                self._unlock_achievement("card_master")
+            if rarity >= 3:
+                self._unlock_achievement("lucky_draw")
+
+        ttk.Button(win, text="🎴 抽一张卡 (人品{}加持)".format(luck),
+                   command=_do_draw).pack(pady=8)
+        ttk.Button(win, text="📋 复制今日人品",
+                   command=lambda: self._copy_luck(luck, luck_name)).pack(pady=2)
+        tk.Label(win, text="人品越高, 出稀有/传说卡的概率越高\n"
+                           "每天免费 {} 次, 之后每次 {} 积分".format(
+                               fun_stuff.FREE_DRAWS_PER_DAY, fun_stuff.CARD_COST),
+                 fg="#999", font=("Arial", 8)).pack(pady=6)
+
+    def _open_week_report(self):
+        """游戏周报窗口(本周时长 + 梗文案 + 复制分享)"""
+        try:
+            import fun_stuff
+        except Exception as exc:
+            messagebox.showerror("错误", str(exc))
+            return
+        r = fun_stuff.week_report()
+        text = fun_stuff.week_report_text()
+        win = tk.Toplevel(self.root)
+        win.title("游戏周报")
+        win.geometry("480x540")
+        win.transient(self.root)
+        tk.Label(win, text="📊 本周游戏周报",
+                 font=("Arial", 15, "bold")).pack(pady=(14, 2))
+        tk.Label(win, text="{} ~ {}".format(r["monday"].strftime("%Y-%m-%d"),
+                                            r["sunday"].strftime("%Y-%m-%d")),
+                 fg="#888").pack()
+        # 汇总
+        tk.Label(win, text="本周总时长: {}\n本周启动: {} 次".format(
+            fun_stuff._human_duration(r["total_seconds"]), r["launches"]),
+            font=("Arial", 12), justify="center").pack(pady=(10, 4))
+        # 各实例时长
+        if r["instance_stats"]:
+            inst_frame = tk.LabelFrame(win, text=" 各版本时长 ")
+            inst_frame.pack(fill="x", padx=20, pady=4)
+            for name, sec in r["instance_stats"]:
+                tk.Label(inst_frame, text="{}: {}".format(
+                    name, fun_stuff._human_duration(sec)),
+                    font=("Arial", 9), anchor="w").pack(fill="x", padx=10, pady=1)
+        # 梗文案
+        facts_frame = tk.LabelFrame(win, text=" 本周之最 ")
+        facts_frame.pack(fill="x", padx=20, pady=8)
+        if r["facts"]:
+            for fact in r["facts"]:
+                tk.Label(facts_frame, text="→ " + fact,
+                         fg="#b8860b", font=("Arial", 10),
+                         anchor="w", justify="left").pack(fill="x", padx=10, pady=1)
+        else:
+            tk.Label(facts_frame, text="本周还没怎么玩, 快启动游戏吧!",
+                     fg="#999").pack(pady=4)
+        # 复制
+        ttk.Button(win, text="📋 复制周报", width=14,
+                   command=lambda: self._copy_week_report(text)).pack(pady=10)
+        tk.Label(win, text="每周自动统计, 玩得越久梗越离谱",
+                 fg="#aaa", font=("Arial", 8)).pack()
+
+    def _copy_week_report(self, text):
+        """复制周报文本"""
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        messagebox.showinfo("已复制", "游戏周报已复制到剪贴板")
 
     def _open_backpack(self):
         """打开背包窗口: 显示挖矿获得的物品, 可生成 /give 指令"""

@@ -146,7 +146,8 @@ def build_exe():
               "sounds", "config", "skin_editor", "multiplayer",
               "server_manager", "crash_analyzer", "mod_checker", "version"]
     cmd = [PY, "-m", "PyInstaller", "--onefile", "--windowed",
-           "--name", "VoxelLauncher"]
+           "--name", "VoxelLauncher",
+           "--icon", os.path.join(ROOT, "app.ico")]
     for h in hidden:
         cmd += ["--hidden-import", h]
     cmd.append("main.py")

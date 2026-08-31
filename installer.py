@@ -367,6 +367,56 @@ def forge_version_for(game_version):
     return versions[0], True
 
 
+def _prepare_forge_target(game_version, target):
+    """Forge 1.17+(含 47.x)安装器 --installClient 要求目标目录已有 Minecraft 安装:
+    需要在 target/versions/<mc> 放置 vanilla 的 json 与 jar, 并存在 launcher_profiles.json。
+    否则会报 "There is no Minecraft launcher profile ... you need to run the launcher first!"。
+    """
+    vdir = target / "versions" / game_version
+    vdir.mkdir(parents=True, exist_ok=True)
+    vjson = vdir / (game_version + ".json")
+    vjar = vdir / (game_version + ".jar")
+    # 优先复用本地已下载的原版版本
+    local_v = _installed_version_dir(game_version)
+    if (local_v / (game_version + ".json")).exists():
+        shutil.copy2(local_v / (game_version + ".json"), vjson)
+        if (local_v / (game_version + ".jar")).exists():
+            shutil.copy2(local_v / (game_version + ".jar"), vjar)
+    else:
+        # 从 Mojang 版本清单下载 vanilla json + jar
+        manifest = requests.get(
+            "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json",
+            timeout=30).json()
+        url = None
+        for ent in manifest.get("versions", []):
+            if ent.get("id") == game_version:
+                url = ent.get("url")
+                break
+        if not url:
+            raise RuntimeError("未找到 Minecraft {} 的版本信息".format(game_version))
+        vdata = requests.get(url, timeout=30).json()
+        vjson.write_text(json.dumps(vdata, ensure_ascii=False, indent=2),
+                         encoding="utf-8")
+        client = (vdata.get("downloads") or {}).get("client") or {}
+        if client and client.get("url"):
+            download_file(client["url"], vjar,
+                          expected_sha1=client.get("sha1"))
+    # launcher profile 标记(Forge 安装器检查)
+    prof = target / "launcher_profiles.json"
+    if not prof.exists():
+        prof.write_text('{"profiles":{}}', encoding="utf-8")
+    # libraries/assets 目录
+    (target / "libraries").mkdir(parents=True, exist_ok=True)
+    (target / "assets").mkdir(parents=True, exist_ok=True)
+    # 同步 vanilla 到正式版本目录(Forge 版本 inheritsFrom 需要原版存在)
+    dst_v = _installed_version_dir(game_version)
+    if not (dst_v / (game_version + ".jar")).exists():
+        dst_v.mkdir(parents=True, exist_ok=True)
+        if vjar.exists():
+            shutil.copy2(vjar, dst_v / (game_version + ".jar"))
+        if vjson.exists():
+            shutil.copy2(vjson, dst_v / (game_version + ".json"))
+
 def install_forge(game_version, forge_version=None, mods_dir=None,
                  progress_cb=None):
     """
@@ -401,26 +451,38 @@ def install_forge(game_version, forge_version=None, mods_dir=None,
             progress_cb("下载 Forge 安装器", 0, 0)
         download_file(installer_url, installer_jar)
 
+        target = tmp / "install"
+        if progress_cb:
+            progress_cb("准备 Minecraft 原版(Forge 需要)", 0, 0)
+        _prepare_forge_target(game_version, target)
+
         if progress_cb:
             progress_cb("运行 Forge 安装器(需要 Java, 请耐心等待)", 0, 0)
         # 静默安装到临时目录(避免污染正式 versions)
-        target = tmp / "install"
         cmd = [java_manager.ensure_console_java(java), "-jar",
                str(installer_jar), "--installClient", str(target)]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        nf = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=900, creationflags=nf)
         out = (proc.stdout or "") + (proc.stderr or "")
         if proc.returncode != 0:
             raise RuntimeError(
                 "Forge 安装失败(Java 版本可能不匹配):\n" + out[-1500:])
 
-        # 安装器会在 target/versions 下生成 {game}-{forge} 版本
-        src_version = "{}".format(game_version) + "-" + forge_ver
+        # 安装器会在 target/versions 下生成 {game}-forge-{forge} 版本
+        src_version = "{}-forge-{}".format(game_version, forge_ver)
         src_vdir = target / "versions" / src_version
         if not src_vdir.exists():
-            # 部分新版目录名为 {game}-{forge}
-            candidates = list((target / "versions").iterdir()) if (
-                target / "versions").exists() else []
-            if candidates:
+            # 兼容不同命名: 排除 vanilla, 优先取带 forge 标记的目录
+            candidates = []
+            if (target / "versions").exists():
+                candidates = [d for d in (target / "versions").iterdir()
+                              if d.is_dir()]
+            tagged = [d for d in candidates if "forge" in d.name.lower()]
+            if tagged:
+                src_vdir = tagged[0]
+                src_version = src_vdir.name
+            elif candidates:
                 src_vdir = candidates[0]
                 src_version = src_vdir.name
             else:

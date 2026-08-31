@@ -10122,7 +10122,7 @@ class VoxelApp:
         # 版本信息
         info_frame = tk.Frame(f)
         info_frame.pack(fill="x", padx=10, pady=10)
-        tk.Label(info_frame, text="版本: v2.0.0", font=("Arial", 10)).grid(
+        tk.Label(info_frame, text="版本: v2.1.0", font=("Arial", 10)).grid(
             row=0, column=0, sticky="w", padx=5, pady=2)
         tk.Label(info_frame, text="引擎: Python + Tkinter", font=("Arial", 10)).grid(
             row=0, column=1, sticky="w", padx=5, pady=2)

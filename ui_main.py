@@ -10230,7 +10230,7 @@ A: 下载后进入游戏 -> 选项 -> 资源包 -> 选中启用
                    command=lambda: self.nb.select(self.tab_fun)).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="🔄 检查更新",
                    command=lambda: messagebox.showinfo("检查更新",
-                       "当前已是最新版本 v2.0.0" + chr(10) +
+                       "当前已是最新版本 v2.1.0" + chr(10) +
                        "感谢使用 VoxelLauncher!")).pack(side="left", padx=5)
 
     def _build_friends_tab(self):

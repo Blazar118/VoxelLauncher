@@ -411,6 +411,11 @@ class VoxelApp:
         self.refresh_java()
         self.refresh_version_list()
 
+        # 存档自动备份后台循环(每分钟检查一次)
+        self._auto_backup_snapshot = {}
+        self._auto_backup_last_run = 0.0
+        self.root.after(60000, self._auto_backup_tick)
+
     # ============================================================
     # 界面构建
     # ============================================================
@@ -3086,6 +3091,22 @@ class VoxelApp:
         self.setting_proxy.insert(0, CONFIG.get("proxy") or "")
         ttk.Label(row_proxy, text="一般留空即可(加速器自动接管), 仅当直连失败时填写", foreground="#888").pack(side="left")
 
+        # 存档自动备份
+        row_ab = ttk.Frame(box)
+        row_ab.pack(fill="x", padx=6, pady=3)
+        self.ab_enabled_var = tk.BooleanVar(value=CONFIG.get("auto_backup_enabled", False))
+        ttk.Checkbutton(row_ab, text="存档自动备份(防坏档, 游戏运行时不备份)",
+                        variable=self.ab_enabled_var).pack(side="left")
+        ttk.Label(row_ab, text="间隔:").pack(side="left", padx=(8, 0))
+        self.ab_interval_var = tk.IntVar(value=int(CONFIG.get("auto_backup_interval", 30)))
+        ttk.Spinbox(row_ab, from_=1, to=1440, width=5,
+                    textvariable=self.ab_interval_var).pack(side="left", padx=2)
+        ttk.Label(row_ab, text="分钟 保留:").pack(side="left", padx=(8, 0))
+        self.ab_keep_var = tk.IntVar(value=int(CONFIG.get("auto_backup_keep", 10)))
+        ttk.Spinbox(row_ab, from_=1, to=99, width=4,
+                    textvariable=self.ab_keep_var).pack(side="left", padx=2)
+        ttk.Label(row_ab, text="份/存档", foreground="#888").pack(side="left")
+
         row_bridge = ttk.Frame(box)
         row_bridge.pack(fill="x", padx=6, pady=3)
         self.bridge_var = tk.BooleanVar(value=CONFIG.get("bridge_enabled", False))
@@ -3760,9 +3781,15 @@ class VoxelApp:
         self._post("status", "拉取版本列表...")
         def _worker():
             try:
-                versions = version_manager.fetch_manifest()
+                versions, from_cache = version_manager.fetch_manifest_with_status()
                 self._post("versions", versions)
-                self._post("status", "版本列表已更新: {} 条".format(len(versions)))
+                if from_cache:
+                    self._post("status",
+                               "网络不可用, 已加载离线缓存: {} 条".format(len(versions)))
+                    self._post("log",
+                               "版本列表网络获取失败, 已使用本地缓存(可稍后重试)")
+                else:
+                    self._post("status", "版本列表已更新: {} 条".format(len(versions)))
             except Exception as exc:
                 self._post("err", ("获取版本列表失败", str(exc)))
                 self._post("status", "获取版本列表失败")
@@ -6935,6 +6962,19 @@ class VoxelApp:
         show_log = self.setting_show_log.get()
         CONFIG.set("show_log_window", "true" if show_log else "false")
         self._apply_log_visibility(show_log)
+        # 保存存档自动备份配置
+        if hasattr(self, "ab_enabled_var"):
+            CONFIG.set("auto_backup_enabled", bool(self.ab_enabled_var.get()))
+            try:
+                CONFIG.set("auto_backup_interval",
+                           max(1, min(1440, int(self.ab_interval_var.get()))))
+            except Exception:
+                pass
+            try:
+                CONFIG.set("auto_backup_keep",
+                           max(1, min(99, int(self.ab_keep_var.get()))))
+            except Exception:
+                pass
         messagebox.showinfo("设置", "设置已保存")
         self._reload_instances()
 
@@ -9481,6 +9521,8 @@ class VoxelApp:
             side="left", padx=2)
         ttk.Button(bar, text="📂 备份管理", command=self._manage_backups).pack(
             side="left", padx=2)
+        ttk.Button(bar, text="🚑 急救回滚", command=self._emergency_restore).pack(
+            side="left", padx=2)
         ttk.Button(bar, text="📁 打开存档目录", command=self._open_saves_dir).pack(
             side="left", padx=2)
         # 存档列表
@@ -9553,26 +9595,308 @@ class VoxelApp:
         backup_name = "{}_{}.zip".format(save_name, timestamp)
         backup_path = backup_dir / backup_name
         try:
-            import zipfile
-            with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                for file in save_path.rglob("*"):
-                    if file.is_file():
-                        zf.write(file, file.relative_to(save_path.parent))
+            self._backup_one_save(save_path, backup_dir)
             messagebox.showinfo("备份成功", "存档已备份到:\n" + str(backup_path))
         except Exception as exc:
             messagebox.showerror("备份失败", str(exc))
 
+    # ---------------- 存档自动备份 + 急救回滚 ----------------
+    def _is_game_running(self):
+        """游戏是否在运行(运行中不自动备份, 避免存档占用/写一半)"""
+        try:
+            import psutil
+            for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+                try:
+                    name = (proc.info.get("name") or "").lower()
+                    cmd_parts = proc.info.get("cmdline") or []
+                    if not isinstance(cmd_parts, (list, tuple)):
+                        cmd_parts = []
+                    cmdline = " ".join(str(x) for x in cmd_parts).lower()
+                    if "java" in name and ("minecraft" in cmdline or
+                                           "net.minecraft" in cmdline):
+                        return True
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return False
+
+    def _auto_backup_tick(self):
+        """自动备份定时检查(每分钟一次)"""
+        try:
+            if CONFIG.get("auto_backup_enabled", False):
+                interval_min = int(CONFIG.get("auto_backup_interval", 30))
+                interval_min = max(1, min(1440, interval_min))
+                last = getattr(self, "_auto_backup_last_run", 0.0)
+                if time.time() - last >= interval_min * 60:
+                    # 游戏运行中跳过, 等游戏退出后再备份
+                    if not self._is_game_running():
+                        self._auto_backup_all()
+                        self._auto_backup_last_run = time.time()
+                    else:
+                        self._auto_backup_last_run = time.time() - interval_min * 60 + 120
+        except Exception:
+            pass
+        try:
+            self.root.after(60000, self._auto_backup_tick)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _save_change_time(save_path):
+        """存档变化时间戳: 取存档内最新文件的 mtime
+        (目录 mtime 在文件内容修改时不会更新, 必须扫描内部文件)"""
+        latest = save_path.stat().st_mtime
+        try:
+            for f in save_path.rglob("*"):
+                if f.is_file():
+                    m = f.stat().st_mtime
+                    if m > latest:
+                        latest = m
+        except Exception:
+            pass
+        return latest
+
+    def _auto_backup_all(self):
+        """自动备份所有有变化的存档 + 清理旧备份"""
+        game_dir = self._get_tools_instance_dir()
+        if not game_dir:
+            return
+        saves_dir = Path(game_dir) / "saves"
+        if not saves_dir.exists():
+            return
+        backup_dir = Path(game_dir) / "voxellauncher_backups"
+        try:
+            backup_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            return
+        last_snap = dict(getattr(self, "_auto_backup_snapshot", {}) or {})
+        new_snap = {}
+        count = 0
+        try:
+            saves = sorted([d for d in saves_dir.iterdir() if d.is_dir()],
+                           key=self._save_change_time, reverse=True)
+        except Exception:
+            saves = []
+        for save in saves:
+            try:
+                mtime = self._save_change_time(save)
+                new_snap[save.name] = mtime
+                # 只有上次备份后有修改的存档才备份
+                if last_snap.get(save.name, 0) < mtime:
+                    self._backup_one_save(save, backup_dir)
+                    self._cleanup_old_backups(save.name, backup_dir)
+                    count += 1
+            except Exception:
+                continue
+        self._auto_backup_snapshot = new_snap
+        if count:
+            try:
+                self._log("💾 自动备份完成: 共 {} 个存档".format(count))
+            except Exception:
+                pass
+
+    def _backup_one_save(self, save_path, backup_dir):
+        """把单个存档打包成 zip 备份到 backup_dir"""
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        save_name = save_path.name
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        backup_path = backup_dir / "{}_{}.zip".format(save_name, timestamp)
+        import zipfile
+        with zipfile.ZipFile(str(backup_path), 'w', zipfile.ZIP_DEFLATED) as zf:
+            for file in save_path.rglob("*"):
+                if file.is_file():
+                    zf.write(str(file), file.relative_to(save_path.parent))
+        return backup_path
+
+    def _cleanup_old_backups(self, save_name, backup_dir):
+        """每个存档只保留最近 N 份备份, 自动删除旧备份"""
+        keep = int(CONFIG.get("auto_backup_keep", 10))
+        keep = max(1, min(99, keep))
+        prefix = save_name + "_"
+        try:
+            files = [f for f in backup_dir.glob("*.zip")
+                     if f.name.startswith(prefix)]
+            files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+            for f in files[keep:]:
+                try:
+                    f.unlink()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     def _manage_backups(self):
-        """管理备份"""
+        """备份管理窗口: 查看/还原/打开目录"""
         game_dir = self._get_tools_instance_dir()
         if not game_dir:
             return
         backup_dir = Path(game_dir) / "voxellauncher_backups"
-        if not backup_dir.exists():
+        if not backup_dir.exists() or not list(backup_dir.glob("*.zip")):
             messagebox.showinfo("提示", "还没有备份文件")
             return
-        import os
-        os.startfile(str(backup_dir))
+        win = tk.Toplevel(self.root)
+        win.title("备份管理")
+        win.geometry("640x420")
+        win.transient(self.root)
+        tk.Label(win, text="备份文件列表(选择后可还原/删除):",
+                 font=("Arial", 10, "bold")).pack(anchor="w", padx=8, pady=4)
+        list_frame = tk.Frame(win)
+        list_frame.pack(fill="both", expand=True, padx=8, pady=4)
+        lb = tk.Listbox(list_frame, font=("Consolas", 9))
+        lb.pack(side="left", fill="both", expand=True)
+        sb = ttk.Scrollbar(list_frame, command=lb.yview)
+        sb.pack(side="right", fill="y")
+        lb.configure(yscrollcommand=sb.set)
+        backups = sorted(backup_dir.glob("*.zip"),
+                         key=lambda x: x.stat().st_mtime, reverse=True)
+        self._backup_files_list = backups
+        for b in backups:
+            size_mb = b.stat().st_size / 1024 / 1024
+            mtime = time.strftime("%Y-%m-%d %H:%M",
+                                  time.localtime(b.stat().st_mtime))
+            lb.insert("end", "{} | {:.1f} MB | {}".format(b.name, size_mb, mtime))
+        btn_frame = tk.Frame(win)
+        btn_frame.pack(fill="x", padx=8, pady=6)
+
+        def _restore():
+            sel = lb.curselection()
+            if not sel:
+                messagebox.showwarning("提示", "请先选择一个备份")
+                return
+            bfile = self._backup_files_list[sel]
+            self._restore_backup(bfile)
+
+        def _del():
+            sel = lb.curselection()
+            if not sel:
+                messagebox.showwarning("提示", "请先选择一个备份")
+                return
+            bfile = self._backup_files_list[sel]
+            if messagebox.askyesno("确认", "删除备份:\n{}".format(bfile.name)):
+                try:
+                    bfile.unlink()
+                    lb.delete(sel)
+                except Exception as exc:
+                    messagebox.showerror("失败", str(exc))
+
+        def _open_dir():
+            import os
+            os.startfile(str(backup_dir))
+
+        ttk.Button(btn_frame, text="🚑 还原到存档", command=_restore).pack(
+            side="left", padx=3)
+        ttk.Button(btn_frame, text="🗑 删除备份", command=_del).pack(
+            side="left", padx=3)
+        ttk.Button(btn_frame, text="📁 打开备份目录", command=_open_dir).pack(
+            side="left", padx=3)
+
+    def _restore_backup(self, backup_file):
+        """把备份 zip 还原到 saves 目录(急救回滚)"""
+        game_dir = self._get_tools_instance_dir()
+        if not game_dir:
+            return
+        saves_dir = Path(game_dir) / "saves"
+        saves_dir.mkdir(parents=True, exist_ok=True)
+        # 从备份文件名推断存档名(去掉时间戳后缀)
+        base = backup_file.name
+        save_name = None
+        if "_" in base:
+            candidate = base.rsplit("_", 2)
+            if len(candidate) == 3:
+                save_name = candidate[0]
+        if not save_name:
+            save_name = base[:-4]
+        target = saves_dir / save_name
+        if target.exists():
+            if not messagebox.askyesno(
+                    "确认还原",
+                    "将用备份覆盖现有存档:\n{}\n\n当前存档会被替换, 继续吗?".format(save_name)):
+                return
+        else:
+            if not messagebox.askyesno("确认还原", "将新建存档: {}".format(save_name)):
+                return
+        import zipfile
+        try:
+            with zipfile.ZipFile(str(backup_file), 'r') as zf:
+                # 解压前先备份一份当前存档到临时(防止还原失败)
+                if target.exists():
+                    tmp = saves_dir / ("_restore_tmp_" + save_name)
+                    if tmp.exists():
+                        import shutil
+                        shutil.rmtree(str(tmp), ignore_errors=True)
+                    shutil.copytree(str(target), str(tmp))
+                try:
+                    for member in zf.infolist():
+                        # 防路径穿越
+                        dest = (target / member.filename).resolve()
+                        if not str(dest).startswith(str(target.resolve())):
+                            continue
+                        if member.is_dir():
+                            dest.mkdir(parents=True, exist_ok=True)
+                        else:
+                            dest.parent.mkdir(parents=True, exist_ok=True)
+                            with zf.open(member) as src, open(str(dest), 'wb') as out:
+                                out.write(src.read())
+                except Exception:
+                    # 还原失败: 恢复临时备份
+                    if tmp.exists():
+                        import shutil
+                        shutil.rmtree(str(target), ignore_errors=True)
+                        shutil.move(str(tmp), str(target))
+                    raise
+                else:
+                    if tmp.exists():
+                        import shutil
+                        shutil.rmtree(str(tmp), ignore_errors=True)
+            self._refresh_saves()
+            messagebox.showinfo("还原成功",
+                                "存档 '{}' 已从备份还原!".format(save_name))
+        except Exception as exc:
+            messagebox.showerror("还原失败", str(exc))
+
+    def _emergency_restore(self):
+        """急救回滚: 快速选择最近一份备份还原(保留在备份管理里)"""
+        game_dir = self._get_tools_instance_dir()
+        if not game_dir:
+            return
+        backup_dir = Path(game_dir) / "voxellauncher_backups"
+        if not backup_dir.exists() or not list(backup_dir.glob("*.zip")):
+            messagebox.showinfo("提示", "还没有任何备份\n可先手动备份, 或开启设置里的自动备份")
+            return
+        # 列出每个存档的最新一份备份, 让用户选
+        win = tk.Toplevel(self.root)
+        win.title("急救回滚")
+        win.geometry("520x360")
+        win.transient(self.root)
+        tk.Label(win, text="选择要回滚的存档备份(每个存档显示最新一份):",
+                 font=("Arial", 10, "bold")).pack(anchor="w", padx=8, pady=4)
+        lf = tk.Frame(win)
+        lf.pack(fill="both", expand=True, padx=8, pady=4)
+        lb = tk.Listbox(lf, font=("Consolas", 9))
+        lb.pack(side="left", fill="both", expand=True)
+        sb = ttk.Scrollbar(lf, command=lb.yview)
+        sb.pack(side="right", fill="y")
+        lb.configure(yscrollcommand=sb.set)
+        # 每个存档最新一份
+        latest = {}
+        for b in sorted(backup_dir.glob("*.zip"),
+                        key=lambda x: x.stat().st_mtime):
+            base = b.name.rsplit("_", 2)[0] if "_" in b.name else b.name[:-4]
+            latest[base] = b
+        items = sorted(latest.items())
+        self._restore_items = []
+        for name, b in items:
+            mtime = time.strftime("%Y-%m-%d %H:%M",
+                                  time.localtime(b.stat().st_mtime))
+            lb.insert("end", "{}  (备份于 {})".format(name, mtime))
+            self._restore_items.append(b)
+        ttk.Button(win, text="🚑 还原选中", command=lambda: (
+            (lambda s: (messagebox.showwarning("提示", "请先选择存档"),
+                        None) if not s else
+             (self._restore_backup(self._restore_items[s]), win.destroy()))(
+                lb.curselection() and lb.curselection()[0]) if lb.curselection() else None
+        )).pack(pady=6)
 
     def _open_saves_dir(self):
         """打开存档目录"""

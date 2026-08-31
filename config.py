@@ -32,6 +32,9 @@ DEFAULTS = {
     "height": 480,                         # 游戏分辨率高
     "window_geometry": None,               # 主窗口位置(可选)
     "proxy": "",                          # 手动代理地址(如 http://127.0.0.1:7890), 留空自动探测
+    "auto_backup_enabled": False,        # 存档自动备份开关
+    "auto_backup_interval": 30,          # 自动备份间隔(分钟)
+    "auto_backup_keep": 10,              # 每个存档最多保留的备份份数
 }
 
 

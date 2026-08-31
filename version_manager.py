@@ -6,6 +6,7 @@ VoxelLauncher - 游戏版本管理模块
 - 解析 version.json 供启动器使用(规则判定/类路径/本地库文件)
 """
 import json
+import os
 import re
 import threading
 import time
@@ -61,13 +62,51 @@ def rules_allow(rules):
 # ---------------------------------------------------------------
 # manifest
 # ---------------------------------------------------------------
-def fetch_manifest():
+# 版本清单本地缓存(网络失败时兜底, 避免 10054 等网络错误导致无法显示版本)
+_APP_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "VoxelLauncher"
+_MANIFEST_CACHE_DIR = _APP_DIR / "cache"
+_MANIFEST_CACHE_FILE = _MANIFEST_CACHE_DIR / "version_manifest.json"
+# 部分 CDN/代理对无 UA 的请求直接重置连接(ConnectionResetError 10054), 带上 UA 更稳
+_HTTP_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/120.0 Safari/537.36 VoxelLauncher/2.2",
+    "Accept": "application/json, text/plain, */*",
+    "Connection": "keep-alive",
+}
+
+
+def _manifest_read_cache():
+    """读取上次成功的版本清单缓存(失败返回 None)"""
+    try:
+        if _MANIFEST_CACHE_FILE.exists():
+            data = json.loads(_MANIFEST_CACHE_FILE.read_text(encoding="utf-8"))
+            versions = data.get("versions")
+            if isinstance(versions, list) and versions:
+                return versions
+    except Exception:
+        pass
+    return None
+
+
+def _manifest_write_cache(versions):
+    """把成功拉取的版本清单写入本地缓存"""
+    try:
+        _MANIFEST_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        payload = {"time": time.time(), "versions": versions}
+        _MANIFEST_CACHE_FILE.write_text(
+            json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def fetch_manifest_with_status():
     """
-    拉取版本清单, 带重试 + 官方/镜像自动互备:
-    - 按下载源配置优先请求, 失败自动切换另一源(镜像)重试
-    - 每源最多尝试 2 次, 共最多 4 次; 解决国内访问官方源
-      (launchermeta.mojang.com) 被重置(ConnectionResetError)的问题
-    返回 [{id, type, url, releaseTime}, ...] 按时间倒序。
+    拉取版本清单, 返回 (versions, from_cache):
+    - 按下载源配置优先请求, 失败自动切换另一源(镜像)重试, 每源最多 2 次
+    - 带上 UA/请求头, 缓解官方源被重置(ConnectionResetError 10054)问题
+    - 全部网络请求失败时, 用上次成功的本地缓存兜底(from_cache=True),
+      不抛异常, 让版本列表始终可用
     """
     preferred = CONFIG.get("download_source", "mojang")
     other = "bmclapi" if preferred == "mojang" else "mojang"
@@ -76,14 +115,31 @@ def fetch_manifest():
     for src in order:
         url = MANIFEST_URLS[src]
         try:
-            resp = requests.get(url, timeout=15)
+            resp = requests.get(url, timeout=12, headers=_HTTP_HEADERS)
             resp.raise_for_status()
             data = resp.json()
-            return data.get("versions", [])
+            versions = data.get("versions", [])
+            if versions:
+                _manifest_write_cache(versions)
+                return versions, False
         except Exception as exc:
             last_err = exc
+            time.sleep(0.3)
+    # 网络全失败: 用本地缓存兜底, 不抛异常
+    cached = _manifest_read_cache()
+    if cached:
+        return cached, True
     raise ConnectionError(
         "版本清单获取失败(官方与镜像均不可用): {}".format(last_err))
+
+
+def fetch_manifest():
+    """
+    拉取版本清单(带缓存兜底), 返回 [{id, type, url, releaseTime}, ...] 按时间倒序。
+    网络失败时自动使用本地缓存。
+    """
+    versions, _ = fetch_manifest_with_status()
+    return versions
 
 
 def get_version_json_url(version_id):

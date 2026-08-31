@@ -1723,6 +1723,7 @@ class VoxelApp:
                 villager_photo = self._villager_photo
                 quotes = self._VILLAGER_QUOTES
                 self._villager_hp = self._villager_max_hp  # 每次打开新村民满血
+                self._villager_angry = 0  # 新村民不生气
 
             win = tk.Toplevel(self.root)
             title = "🧳 流浪商人" if is_wandering else "🤝 村民交易"
@@ -1782,8 +1783,9 @@ class VoxelApp:
                                            font=("Arial", 16, "bold"))
             self._damage_label.pack(pady=2)
 
-            # 交易列表
-            list_frame = tk.Frame(win, bg=bg_color, padx=10, pady=8)
+            # 交易列表 (保存引用, 供攻击后重建用)
+            self._trade_list_frame = tk.Frame(win, bg=bg_color, padx=10, pady=8)
+            list_frame = self._trade_list_frame
             list_frame.pack(fill="both", expand=True)
             tk.Label(list_frame, text="交易选项:", bg=bg_color,
                      font=("Arial", 10, "bold"), fg="#ffffff" if is_wandering else "#5a3a1a").pack(anchor="w")
@@ -1812,17 +1814,27 @@ class VoxelApp:
             self._xp_label.config(text=f"⭐ Lv.{self._xp_level} ({self._xp_points}/10)")
 
     def _build_trade_row(self, parent, trade, index, bg_color="#c8a878", is_wandering=False):
-        """构建一行交易选项(含血量折扣)"""
+        """构建一行交易选项(含血量折扣 + 生气涨价)"""
         give_items = trade["give"]
         get_items = trade["get"]
-        # 血量折扣(仅普通村民)
+        # 价格系数: 血量折扣 * 生气涨价
         discount = 1.0
         if not is_wandering and hasattr(self, '_villager_hp'):
             discount = self._get_villager_discount()
+        # 生气机制: 村民生气会涨价(原版MC行为)
+        angry_mult = 1.0
+        if not is_wandering:
+            angry_level = getattr(self, '_villager_angry', 0)
+            if angry_level == 1:
+                angry_mult = 1.5   # 生气: 涨价50%
+            elif angry_level >= 2:
+                angry_mult = 2.0   # 暴怒: 涨价100%
+        price_factor = discount * angry_mult
         discounted_give = {}
         for k, v in give_items.items():
-            discounted_give[k] = max(1, int(v * discount + 0.99))
+            discounted_give[k] = max(1, int(v * price_factor + 0.99))
         trade["_discounted_give"] = discounted_give
+        trade["_price_factor"] = price_factor
         give_text = " + ".join(
             f"{v} {self._DROP_NAMES.get(k, k)}" for k, v in discounted_give.items()
         )
@@ -1835,10 +1847,15 @@ class VoxelApp:
         row.pack(fill="x", pady=3)
 
         text_color = "#ffffff" if is_wandering else "#333"
-        discount_text = ""
-        if discount < 0.99 and not is_wandering:
-            discount_text = f"  (降价{int((1-discount)*100)}%)"
-        tk.Label(row, text=f"{give_text}  →  {get_text}{discount_text}",
+        price_text = ""
+        angry_level = getattr(self, '_villager_angry', 0) if not is_wandering else 0
+        if angry_level == 1:
+            price_text = "  (😠 生气了, 涨价50%!)"
+        elif angry_level >= 2:
+            price_text = "  (🤬 暴怒, 涨价100%!)"
+        elif discount < 0.99 and not is_wandering:
+            price_text = f"  (降价{int((1-discount)*100)}%)"
+        tk.Label(row, text=f"{give_text}  →  {get_text}{price_text}",
                  bg=bg_color, font=("Arial", 9), fg=text_color).pack(side="left")
 
         # 检查材料是否足够(用折扣价)
@@ -1915,7 +1932,7 @@ class VoxelApp:
         return 0.5 + 0.5 * ratio
 
     def _attack_villager(self, win):
-        """攻击村民: 扣血, 显示伤害, 降低交易价格"""
+        """攻击村民: 扣血, 显示伤害, 有概率生气涨价(原版MC行为)"""
         if self._villager_hp <= 0:
             self._creeper_say("村民已经晕倒了, 换一个吧", 2000)
             return
@@ -1932,9 +1949,25 @@ class VoxelApp:
         # 更新血量条
         self._update_villager_hp_bar()
 
-        # 村民被打说话
-        hurt_quotes = ["哎呦！", "别打了！", "饶命啊！", "我降价还不行吗！", "救命啊！", "我错了！"]
-        self._villager_quote_label.config(text=random.choice(hurt_quotes), fg="#ffaaaa")
+        # ===== 生气机制: 有概率被打后涨价 =====
+        angry_level = getattr(self, '_villager_angry', 0)
+        roll = random.random()
+        if angry_level < 1 and roll < 0.30:
+            self._villager_angry = 1   # 30% 概率生气
+        elif angry_level == 1 and roll < 0.45:
+            self._villager_angry = 2   # 已生气时 45% 概率升级为暴怒
+        if angry_level == 0 and self._villager_angry == 1:
+            self._creeper_say("😠 村民生气了! 交易要涨价50%!", 2200)
+        elif self._villager_angry == 2 and angry_level < 2:
+            self._creeper_say("🤬 村民暴怒了! 价格翻倍!", 2200)
+
+        # 村民被打说话(生气时说气话)
+        if self._villager_angry >= 1:
+            angry_quotes = ["气死我了！", "你等着！", "涨价了！", "哼！不给你便宜！", "我记住你了！"]
+            self._villager_quote_label.config(text=random.choice(angry_quotes), fg="#ff5555")
+        else:
+            hurt_quotes = ["哎呦！", "别打了！", "饶命啊！", "我降价还不行吗！", "救命啊！", "我错了！"]
+            self._villager_quote_label.config(text=random.choice(hurt_quotes), fg="#ffaaaa")
 
         # 血量为0: 村民晕倒
         if self._villager_hp <= 0:
@@ -1947,37 +1980,37 @@ class VoxelApp:
                 btn.config(state="disabled")
             self._creeper_say("村民被你打晕了! 换一个吧", 3000)
         else:
-            # 刷新交易按钮(价格降低)
-            discount = self._get_villager_discount()
-            discount_pct = int((1 - discount) * 100)
-            if discount_pct > 0:
-                self._creeper_say(f"村民降价了! 便宜{discount_pct}%", 2000)
-            # 重新构建交易列表
+            # 重新构建交易列表(价格可能降价或涨价)
             self._rebuild_trade_list(win)
 
     def _rebuild_trade_list(self, win):
-        """重新构建交易列表(价格变化后)"""
+        """重新构建交易列表(价格变化后), 使用保存的 list_frame 引用, 不会丢列表"""
         try:
-            # 找到交易列表frame并清空
-            for widget in win.winfo_children():
-                if isinstance(widget, tk.Frame) and widget.cget("bg") == win.cget("bg"):
-                    for child in widget.winfo_children():
-                        if isinstance(child, tk.Frame):
-                            child.destroy()
+            # 用保存的引用直接清空重建(不再靠 bg 猜测, 修复交易项消失的 bug)
+            list_frame = getattr(self, '_trade_list_frame', None)
+            if list_frame is None or not list_frame.winfo_exists():
+                # 兜底: 按背景色查找
+                is_wandering = getattr(self, '_wandering_trader_active', False)
+                bg_color = "#4a6a8a" if is_wandering else "#c8a878"
+                for widget in win.winfo_children():
+                    if isinstance(widget, tk.Frame) and widget.cget("bg") == bg_color:
+                        list_frame = widget
+                        break
+            if list_frame is None:
+                return
+            # 清空交易行(保留"交易选项:"标签)
+            for child in list_frame.winfo_children():
+                if isinstance(child, tk.Frame):
+                    child.destroy()
             # 重新构建
             is_wandering = getattr(self, '_wandering_trader_active', False)
             bg_color = "#4a6a8a" if is_wandering else "#c8a878"
             self._trade_buttons = []
-            list_frame = None
-            for widget in win.winfo_children():
-                if isinstance(widget, tk.Frame) and widget.cget("bg") == bg_color:
-                    list_frame = widget
-                    break
-            if list_frame:
-                for i, trade in enumerate(self._current_villager["trades"]):
-                    self._build_trade_row(list_frame, trade, i, bg_color, is_wandering)
+            for i, trade in enumerate(self._current_villager["trades"]):
+                self._build_trade_row(list_frame, trade, i, bg_color, is_wandering)
         except Exception:
-            pass
+            import traceback
+            traceback.print_exc()
 
     def _trader_say(self, text, duration=2500):
         """流浪商人说话(气泡显示)"""
@@ -4899,6 +4932,7 @@ class VoxelApp:
         self._axe = {"type": "iron", "damage": 9}
         self._villager_hp = 100
         self._villager_max_hp = 100
+        self._villager_angry = 0  # 0=正常 1=生气(涨价) 2=暴怒(大幅涨价)
         self._chest = self._load_chest()
         self._update_chest_count()
         self._current_ore = None

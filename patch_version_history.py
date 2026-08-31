@@ -1,27 +1,11 @@
 # -*- coding: utf-8 -*-
-"""
-VoxelLauncher 统一版本号管理（唯一权威来源）
-- 启动器、官网、Release 全部从这里读
-- 升级版本号只需改这里，或调用 release.py 自动升级
-"""
-import os
+"""version.py 添加 HISTORY_VERSIONS"""
+filepath = r'C:\Users\bllaa\Doubao\chats\2026-08-28\new-chat\VoxelLauncher\version.py'
+with open(filepath, 'r', encoding='utf-8') as f:
+    content = f.read()
 
-# ---------------------------------------------------------------
-# 版本号（唯一权威来源）
-# ---------------------------------------------------------------
-VERSION = "2.2.5"
-VERSION_TAG = "v" + VERSION  # v2.1.0
-
-# 项目信息
-PROJECT_NAME = "VoxelLauncher"
-GITHUB_REPO = "Blazar118/VoxelLauncher"
-GITHUB_URL = "https://github.com/" + GITHUB_REPO
-
-# 下载地址（Release 附件直链）
-DOWNLOAD_URL = GITHUB_URL + "/releases/latest/download/VoxelLauncher.exe"
-
-# 官网地址
-WEBSITE_URL = "https://blazar118.github.io/VoxelLauncher/"
+anchor = '# 官网地址\nWEBSITE_URL = "https://blazar118.github.io/VoxelLauncher/"'
+addition = anchor + '''
 
 
 # ---------------------------------------------------------------
@@ -59,19 +43,14 @@ HISTORY_VERSIONS = [
         "desc": "版本下载、Fabric/Forge 加载器、Modrinth/CurseForge 模组、实例管理、资源/数据/光影/整合包、高速下载、微软账号登录; 娱乐(挖矿/钓鱼/养殖/宠物AI/苦力怕+村民)、战斗(僵尸/武器/掉落)、游戏联动",
         "url": GITHUB_URL + "/releases/download/v2.0.0/VoxelLauncher.exe",
     },
-]
+]'''
 
-
-def get_project_root():
-    """返回项目根目录（version.py 所在目录）"""
-    return os.path.dirname(os.path.abspath(__file__))
-
-
-def get_version():
-    """返回版本号字符串，如 2.1.0"""
-    return VERSION
-
-
-def get_version_tag():
-    """返回带 v 的版本标签，如 v2.1.0"""
-    return VERSION_TAG
+if anchor in content:
+    content = content.replace(anchor, addition, 1)
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write(content)
+    import ast
+    ast.parse(content)
+    print('version.py 已添加 HISTORY_VERSIONS OK')
+else:
+    print('FAIL: 未找到锚点')

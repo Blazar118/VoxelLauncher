@@ -16,10 +16,11 @@ from pathlib import Path
 
 from config import CONFIG
 import java_manager
+import version
 import version_manager
 
 LAUNCHER_NAME = "VoxelLauncher"
-LAUNCHER_VERSION = "1.0.0"
+LAUNCHER_VERSION = version.VERSION  # 与 version.py 统一
 
 
 # ---------------------------------------------------------------

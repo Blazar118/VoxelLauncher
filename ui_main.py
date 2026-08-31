@@ -28,6 +28,7 @@ import bridge
 import instance as instance_mod
 import java_manager
 import launcher
+import version
 import version_manager
 import installer as installer_mod
 import modrinth
@@ -10122,7 +10123,7 @@ class VoxelApp:
         # 版本信息
         info_frame = tk.Frame(f)
         info_frame.pack(fill="x", padx=10, pady=10)
-        tk.Label(info_frame, text="版本: v2.1.0", font=("Arial", 10)).grid(
+        tk.Label(info_frame, text="版本: " + version.VERSION_TAG, font=("Arial", 10)).grid(
             row=0, column=0, sticky="w", padx=5, pady=2)
         tk.Label(info_frame, text="引擎: Python + Tkinter", font=("Arial", 10)).grid(
             row=0, column=1, sticky="w", padx=5, pady=2)
@@ -10230,7 +10231,7 @@ A: 下载后进入游戏 -> 选项 -> 资源包 -> 选中启用
                    command=lambda: self.nb.select(self.tab_fun)).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="🔄 检查更新",
                    command=lambda: messagebox.showinfo("检查更新",
-                       "当前已是最新版本 v2.1.0" + chr(10) +
+                       "当前已是最新版本 " + version.VERSION_TAG + chr(10) +
                        "感谢使用 VoxelLauncher!")).pack(side="left", padx=5)
 
     def _build_friends_tab(self):

@@ -4116,10 +4116,21 @@ class VoxelApp:
                 version_id = ver.get("id")
                 ver_name = ver.get("name", "") or ver.get("version_number", "")
                 self._post("mr_status", "下载版本: {}".format(ver_name))
-                # 下载选中版本并自动补装依赖
-                modrinth.download_versions_with_deps(
-                    version_id, mc, loader, dest_dir)
-                self._post("mr_status", "已下载 {} 到 {}".format(ver_name, dest_dir))
+                # 下载选中版本并自动补装依赖(带进度)
+                dep_results = []
+                def _dl_progress(msg, cur, total):
+                    self._post("mr_status", msg)
+                dl_results = modrinth.download_versions_with_deps(
+                    version_id, mc, loader, dest_dir,
+                    progress_cb=_dl_progress)
+                # 统计结果
+                main_mods = [r for r in dl_results if not r[1]]
+                dep_mods = [r for r in dl_results if r[1]]
+                result_msg = "下载完成: 主模组{}个, 依赖{}个".format(len(main_mods), len(dep_mods))
+                if dep_mods:
+                    dep_names = "\n".join(["  - " + r[0] for r in dep_mods])
+                    result_msg += "\n已安装依赖:\n" + dep_names
+                self._post("mr_status", result_msg)
                 self._post("mods_reload", None)
             except ValueError as exc:
                 msg = "{} (当前实例: {} + {})".format(exc, mc, loader or "任意")
@@ -8298,7 +8309,7 @@ class VoxelApp:
             side="left", padx=2)
         ttk.Button(bar, text="🔍 检查更新", command=self._check_mod_updates).pack(
             side="left", padx=2)
-        ttk.Button(bar, text="⚠ 冲突检测", command=self._detect_mod_conflicts).pack(
+        ttk.Button(bar, text="🔍 深度冲突检测", command=self._detect_mod_conflicts_advanced).pack(
             side="left", padx=2)
         ttk.Button(bar, text="📁 打开mods文件夹", command=self._open_mods_dir).pack(
             side="left", padx=2)
@@ -8646,7 +8657,7 @@ class VoxelApp:
         top.pack(fill="x", padx=6, pady=6)
         ttk.Button(top, text="🔄 刷新日志列表", command=self._refresh_crash_logs).pack(
             side="left", padx=2)
-        ttk.Button(top, text="📋 分析选中日志", command=self._analyze_crash_log).pack(
+        ttk.Button(top, text="🔍 智能分析", command=self._analyze_crash_advanced).pack(
             side="left", padx=2)
         ttk.Button(top, text="📁 打开日志文件夹", command=self._open_crash_logs_dir).pack(
             side="left", padx=2)
@@ -8813,7 +8824,14 @@ class VoxelApp:
                                                   command=self._toggle_auto_perf)
         self._perf_auto_check.pack(side="left", padx=5)
         # 提示
-        ttk.Label(content, text="提示: FPS 数据需要游戏内 Mod 支持, 这里显示进程级别的性能数据",
+        # FPS显示
+        self._fps_label = ttk.Label(content, text="🎮 FPS: -- (需游戏联动Mod)",
+                                     font=("Arial", 11, "bold"), foreground="#ff8800")
+        self._fps_label.pack(pady=5)
+        ttk.Button(content, text="▶ 启动FPS监控",
+                   command=self._start_fps_monitor).pack(pady=5)
+        ttk.Label(content, text="提示: FPS数据需要游戏联动Mod支持, 或按F3查看",
+
                   foreground="#666", font=("Arial", 9)).pack(pady=10)
         # 启动时刷新一次
         self.root.after(1000, self._refresh_performance)
@@ -9474,6 +9492,8 @@ class VoxelApp:
                    command=self._refresh_servers).pack(side="left", padx=2)
         ttk.Button(toolbar, text="🗑 删除选中",
                    command=self._remove_server).pack(side="left", padx=2)
+        ttk.Button(toolbar, text="🌐 一键局域网",
+                   command=self._one_click_lan).pack(side="left", padx=2)
         ttk.Button(toolbar, text="🎮 加入选中服务器",
                    command=self._join_server).pack(side="right", padx=2)
 
@@ -9760,8 +9780,12 @@ class VoxelApp:
         self.server_stop_btn.pack(side="left", padx=5)
 
         # 连接信息
-        self.server_info_label = ttk.Label(ctrl_frame, text="未运行", foreground="#666")
-        self.server_info_label.pack(side="left", padx=20)
+        info_frame = ttk.Frame(ctrl_frame)
+        info_frame.pack(side="left", padx=20)
+        self.server_info_label = ttk.Label(info_frame, text="未运行", foreground="#666")
+        self.server_info_label.pack(side="left")
+        ttk.Button(info_frame, text="📋 复制本机", command=self._copy_local_addr).pack(side="left", padx=5)
+        ttk.Button(info_frame, text="🌐 复制外网", command=self._copy_public_addr).pack(side="left", padx=2)
 
         # 控制台
         console_frame = ttk.LabelFrame(f, text=" 服务器控制台 ")
@@ -9847,10 +9871,15 @@ class VoxelApp:
 
             ip = self._server_inst.get_local_ip()
             port = self._server_inst.get_port()
+            self._server_port = port
+            self._server_local_ip = ip
+            # 异步获取外网IP
+            self._fetch_public_ip()
             self.server_info_label.config(
-                text="运行中 | 局域网地址: {}:{}".format(ip, port),
+                text="运行中 | 本机: {}:{} | 外网: 获取中...".format(ip, port),
                 foreground="green")
             self._append_server_log("服务器启动中...")
+            self._append_server_log("本机连接地址: {}:{}".format(ip, port))
         except Exception as e:
             messagebox.showerror("启动失败", str(e))
 
@@ -11155,6 +11184,290 @@ A: 下载后进入游戏 -> 选项 -> 资源包 -> 选中启用
             text += "{} {}: +{} 积分\n".format(w["icon"], w["action"], w["points"])
         text += "\n挖矿越稀有，积分越多！"
         messagebox.showinfo("积分获取方式", text, parent=parent)
+
+    # ================================================================
+    # 强大崩溃分析 (使用 crash_analyzer 模块)
+    # ================================================================
+    def _analyze_crash_advanced(self):
+        """强大的崩溃日志分析"""
+        sel = self.crash_log_listbox.curselection()
+        if not sel:
+            messagebox.showinfo("提示", "请先选择一个崩溃日志")
+            return
+        game_dir = self._get_tools_instance_dir()
+        if not game_dir:
+            return
+        item = self.crash_log_listbox.get(sel[0])
+        if item.startswith("("):
+            return
+        log_name = item.split(" | ")[0]
+        log_path = str(Path(game_dir) / "crash-reports" / log_name)
+
+        try:
+            import crash_analyzer
+            analyzer = crash_analyzer.CrashAnalyzer(str(game_dir))
+            result = analyzer.analyze(log_path)
+        except Exception as e:
+            messagebox.showerror("分析失败", str(e))
+            return
+
+        self.crash_result.delete("1.0", "end")
+        self.crash_result.insert("end", "=== 🔍 智能崩溃分析 ===\n\n")
+        self.crash_result.insert("end", "📄 日志: {}\n".format(result["file"]))
+        self.crash_result.insert("end", "⏰ 时间: {}\n".format(result["time"]))
+        if result.get("game_version"):
+            self.crash_result.insert("end", "🎮 版本: {}\n".format(result["game_version"]))
+        if result.get("loader"):
+            self.crash_result.insert("end", "🔧 加载器: {}\n".format(result["loader"]))
+        if result.get("java_version"):
+            self.crash_result.insert("end", "☕ Java: {}\n".format(result["java_version"]))
+        self.crash_result.insert("end", "\n")
+
+        # 检测到的问题
+        if result["causes"]:
+            self.crash_result.insert("end", "⚠️  检测到 {} 个问题:\n\n".format(len(result["causes"])))
+            for i, cause in enumerate(result["causes"], 1):
+                severity_icon = "🔴" if cause["severity"] == "high" else ("🟡" if cause["severity"] == "medium" else "🟢")
+                self.crash_result.insert("end", "{} 问题{}: {}\n".format(severity_icon, i, cause["name"]))
+                self.crash_result.insert("end", "   💡 建议: {}\n\n".format(cause["solution"]))
+        else:
+            self.crash_result.insert("end", "✅ 未检测到常见崩溃原因\n\n")
+
+        # 可疑模组
+        if result.get("suspected_mods"):
+            self.crash_result.insert("end", "🔗 可疑模组 (出现在堆栈中):\n")
+            for mod in result["suspected_mods"]:
+                self.crash_result.insert("end", "   - {}\n".format(mod))
+            self.crash_result.insert("end", "\n")
+
+        self.crash_result.insert("end", "📋 摘要: {}\n".format(result["summary"]))
+
+    # ================================================================
+    # 强大模组冲突检查 (使用 mod_checker 模块)
+    # ================================================================
+    def _detect_mod_conflicts_advanced(self):
+        """强大的模组冲突检查"""
+        self.mod_tools_result.delete("1.0", "end")
+        self.mod_tools_result.insert("end", "🔍 正在深度检测模组冲突...\n\n")
+        self.mod_tools_result.update()
+
+        game_dir = self._get_tools_instance_dir()
+        if not game_dir:
+            self.mod_tools_result.insert("end", "❌ 请先选择实例\n")
+            return
+
+        try:
+            import mod_checker
+            checker = mod_checker.ModChecker(str(Path(game_dir) / "mods"))
+            result = checker.check_conflicts()
+        except Exception as e:
+            self.mod_tools_result.insert("end", "❌ 检测失败: {}\n".format(e))
+            return
+
+        summary = result["summary"]
+        self.mod_tools_result.insert("end", "📊 检测结果:\n")
+        self.mod_tools_result.insert("end", "   总模组数: {}\n".format(summary["total_mods"]))
+        self.mod_tools_result.insert("end", "   Fabric模组: {}\n".format(summary["fabric_mods"]))
+        self.mod_tools_result.insert("end", "   Forge模组: {}\n".format(summary["forge_mods"]))
+        self.mod_tools_result.insert("end", "   无法识别: {}\n".format(summary["unknown_mods"]))
+        self.mod_tools_result.insert("end", "   🔴 严重问题: {}\n".format(summary["errors"]))
+        self.mod_tools_result.insert("end", "   🟡 警告: {}\n".format(summary["warnings"]))
+        self.mod_tools_result.insert("end", "   ℹ️  信息: {}\n\n".format(summary["infos"]))
+
+        if not result["issues"]:
+            self.mod_tools_result.insert("end", "✅ 未发现问题! 模组配置良好。\n")
+            return
+
+        self.mod_tools_result.insert("end", "📝 详细问题:\n\n")
+        for i, issue in enumerate(result["issues"], 1):
+            severity_icon = "🔴" if issue["severity"] == "error" else ("🟡" if issue["severity"] == "warning" else "ℹ️")
+            self.mod_tools_result.insert("end", "{} {}. {}\n".format(severity_icon, i, issue["title"]))
+            self.mod_tools_result.insert("end", "   {}\n".format(issue["description"]))
+            if issue.get("mods"):
+                self.mod_tools_result.insert("end", "   涉及文件:\n")
+                for m in issue["mods"]:
+                    self.mod_tools_result.insert("end", "      - {}\n".format(m))
+            self.mod_tools_result.insert("end", "   💡 解决: {}\n\n".format(issue["solution"]))
+
+    # ================================================================
+    # FPS 显示 (通过游戏日志或Bridge)
+    # ================================================================
+    def _start_fps_monitor(self):
+        """启动FPS监控"""
+        self._fps_monitoring = True
+        self._fps_value = 0
+        self._fps_last_frames = 0
+        self._fps_last_time = 0
+        self._fps_update_loop()
+
+    def _stop_fps_monitor(self):
+        """停止FPS监控"""
+        self._fps_monitoring = False
+
+    def _fps_update_loop(self):
+        """FPS更新循环"""
+        if not getattr(self, '_fps_monitoring', False):
+            return
+        try:
+            # 尝试从游戏日志读取FPS (Minecraft 按 F3 会显示)
+            # 或者通过Bridge读取
+            proc = getattr(self, '_game_proc', None)
+            if proc and proc.is_alive():
+                # 简单估算: 游戏运行中显示一个占位FPS
+                # 实际FPS需要Bridge模组配合
+                if hasattr(self, '_perf_status_label'):
+                    self._perf_status_label.config(
+                        text="🎮 游戏运行中 | FPS: 监测中...",
+                        foreground="#00aa00")
+            else:
+                if hasattr(self, '_perf_status_label'):
+                    self._perf_status_label.config(text="游戏未运行", foreground="#999")
+        except Exception:
+            pass
+        self.root.after(2000, self._fps_update_loop)
+
+    # ================================================================
+    # 一键创建局域网世界
+    # ================================================================
+    def _one_click_lan(self):
+        """一键创建局域网世界并显示连接信息"""
+        # 检查游戏是否在运行
+        proc = getattr(self, '_game_proc', None)
+        if not proc or not proc.is_alive():
+            messagebox.showinfo("提示", "请先启动游戏并进入一个世界\n然后按 ESC -> 对局域网开放")
+            return
+
+        # 获取本机IP
+        try:
+            import socket
+            hostname = socket.gethostname()
+            local_ip = socket.gethostbyname(hostname)
+        except Exception:
+            local_ip = "127.0.0.1"
+
+        # 显示连接信息
+        win = tk.Toplevel(self.root)
+        win.title("🌐 局域网联机信息")
+        win.geometry("400x300")
+        win.resizable(False, False)
+
+        tk.Label(win, text="🌐 局域网联机信息", font=("Arial", 14, "bold")).pack(pady=10)
+
+        info_frame = ttk.LabelFrame(win, text=" 连接信息 ")
+        info_frame.pack(fill="x", padx=20, pady=10)
+
+        tk.Label(info_frame, text="本机IP:", font=("Arial", 10)).pack(anchor="w", padx=10, pady=5)
+        ip_entry = ttk.Entry(info_frame, font=("Consolas", 12))
+        ip_entry.insert(0, local_ip)
+        ip_entry.pack(fill="x", padx=10, pady=2)
+        ip_entry.config(state="readonly")
+
+        tk.Label(info_frame, text="端口号 (游戏里显示):", font=("Arial", 10)).pack(anchor="w", padx=10, pady=5)
+        port_entry = ttk.Entry(info_frame, font=("Consolas", 12))
+        port_entry.insert(0, "25565")
+        port_entry.pack(fill="x", padx=10, pady=2)
+
+        tk.Label(info_frame, text="完整地址:", font=("Arial", 10)).pack(anchor="w", padx=10, pady=5)
+        addr_entry = ttk.Entry(info_frame, font=("Consolas", 12, "bold"), foreground="#0066cc")
+        addr_entry.insert(0, "{}:25565".format(local_ip))
+        addr_entry.pack(fill="x", padx=10, pady=2)
+        addr_entry.config(state="readonly")
+
+        def update_addr(*args):
+            addr_entry.config(state="normal")
+            addr_entry.delete(0, "end")
+            addr_entry.insert(0, "{}:{}".format(local_ip, port_entry.get()))
+            addr_entry.config(state="readonly")
+        port_entry.bind("<KeyRelease>", update_addr)
+
+        btn_frame = tk.Frame(win)
+        btn_frame.pack(pady=10)
+
+        def copy_addr():
+            self.root.clipboard_clear()
+            self.root.clipboard_append(addr_entry.get())
+            messagebox.showinfo("已复制", "地址已复制到剪贴板:\n" + addr_entry.get())
+
+        ttk.Button(btn_frame, text="📋 复制完整地址", command=copy_addr).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="📋 复制IP",
+                   command=lambda: self._copy_to_clipboard(local_ip)).pack(side="left", padx=5)
+
+        steps = tk.Label(win, text="步骤:\n1. 游戏里按 ESC -> 对局域网开放\n2. 记住左下角显示的端口号\n3. 把上面的完整地址发给朋友\n4. 朋友在多人游戏里添加这个地址",
+                        justify="left", font=("Arial", 9), foreground="#666")
+        steps.pack(pady=10)
+
+
+    # ================================================================
+    # 服务器连接地址相关
+    # ================================================================
+    def _get_public_ip(self):
+        """获取外网IP"""
+        try:
+            import requests
+            resp = requests.get("https://api.ipify.org", timeout=5)
+            return resp.text.strip()
+        except Exception:
+            try:
+                import requests
+                resp = requests.get("https://ifconfig.me/ip", timeout=5)
+                return resp.text.strip()
+            except Exception:
+                return None
+
+    def _fetch_public_ip(self):
+        """异步获取外网IP并更新显示"""
+        def worker():
+            try:
+                pub_ip = self._get_public_ip()
+                self.root.after(0, lambda: self._update_public_ip(pub_ip))
+            except Exception:
+                self.root.after(0, lambda: self._update_public_ip(None))
+        import threading
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _update_public_ip(self, pub_ip):
+        """更新外网IP显示"""
+        if pub_ip:
+            self._server_public_ip = pub_ip
+            port = getattr(self, '_server_port', '25565')
+            local_ip = getattr(self, '_server_local_ip', '127.0.0.1')
+            self.server_info_label.config(
+                text="运行中 | 本机: {}:{} | 外网: {}:{}".format(local_ip, port, pub_ip, port),
+                foreground="green")
+            self._append_server_log("外网连接地址: {}:{}".format(pub_ip, port))
+            self._append_server_log("注意: 外网连接需要路由器端口映射或内网穿透")
+        else:
+            self._server_public_ip = None
+            port = getattr(self, '_server_port', '25565')
+            local_ip = getattr(self, '_server_local_ip', '127.0.0.1')
+            self.server_info_label.config(
+                text="运行中 | 本机: {}:{} | 外网: 获取失败".format(local_ip, port),
+                foreground="#cc8800")
+
+    def _copy_local_addr(self):
+        """复制本机地址"""
+        ip = getattr(self, '_server_local_ip', None)
+        port = getattr(self, '_server_port', '25565')
+        if ip:
+            addr = "{}:{}".format(ip, port)
+            self.root.clipboard_clear()
+            self.root.clipboard_append(addr)
+            self._append_server_log("已复制本机地址: " + addr)
+        else:
+            messagebox.showinfo("提示", "服务器未启动")
+
+    def _copy_public_addr(self):
+        """复制外网地址"""
+        ip = getattr(self, '_server_public_ip', None)
+        port = getattr(self, '_server_port', '25565')
+        if ip:
+            addr = "{}:{}".format(ip, port)
+            self.root.clipboard_clear()
+            self.root.clipboard_append(addr)
+            self._append_server_log("已复制外网地址: " + addr)
+        else:
+            messagebox.showinfo("提示", "外网IP未获取到，请检查网络")
+
 
 def main():
     if HAS_DND:

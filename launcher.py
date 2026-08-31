@@ -115,13 +115,14 @@ def _optimized_jvm_args():
     ]
 
 
-def build_command(instance, account, java_path, version_data):
+def build_command(instance, account, java_path, version_data, server_address=None):
     """
     构建完整启动命令(列表形式)。
     instance: 实例 dict(含 version_id / 内存等)
     account : 账号 dict
     java_path: java.exe 绝对路径
     version_data: 解析后的 version.json
+    server_address: 自动加入的服务器地址(可选), 支持 IP 或 IP:端口
     """
     mc_root = Path(CONFIG.get("game_dir"))
     version_id = instance["version_id"]
@@ -181,6 +182,13 @@ def build_command(instance, account, java_path, version_data):
     extra = instance.get("extra_jvm_args") or ""
     custom_jvm = extra.split() if isinstance(extra, str) else []
 
+    # 自动加入服务器参数(必须放在游戏参数中, 主类之后)
+    server_args = []
+    if server_address:
+        # Minecraft 1.20+ 使用 Quick Play 参数, 旧的 --server 会被忽略
+        # 格式: --quickPlayMultiplayer <ip:port>
+        server_args = ["--quickPlayMultiplayer", server_address]
+
     # 组装
     cmd = [java_path]
     cmd.append("-Xms{}M".format(instance.get("min_memory") or 512))
@@ -192,6 +200,8 @@ def build_command(instance, account, java_path, version_data):
     if main_class:
         cmd.append(main_class)
     cmd += [substitute(a, tokens) for a in game_args]
+    # 服务器参数放在最后, Minecraft 会解析
+    cmd += server_args
     return cmd
 
 
@@ -292,10 +302,11 @@ def launch_game(instance, account, java_path, log_cb=None, on_exit=None, server_
         raise RuntimeError("未选择 Java, 请先在设置中扫描/选择")
     java_path = java_manager.ensure_console_java(java_path)
 
-    cmd = build_command(instance, account, java_path, version_data)
-    # 如果指定了服务器地址, 加上 --server 参数自动连接
+    cmd = build_command(instance, account, java_path, version_data,
+                       server_address=server_address)
     if server_address:
-        cmd += ["--server", server_address]
+        if log_cb:
+            log_cb("自动加入服务器: " + server_address)
     if log_cb:
         log_cb("启动命令: " + " ".join(cmd))
 

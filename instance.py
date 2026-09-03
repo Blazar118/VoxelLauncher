@@ -226,6 +226,12 @@ def delete_instance(name):
 # 实例内子目录快捷方法
 # ---------------------------------------------------------------
 def instance_subdir(name, sub):
-    d = instance_dir(name) / sub
+    inst = get_instance(name)
+    if inst and inst.get("merged_mode"):
+        gd = inst.get("game_dir") or str(
+            Path(CONFIG.get("game_dir")) / "versions" / inst["version_id"])
+        d = Path(gd) / sub
+    else:
+        d = instance_dir(name) / sub
     d.mkdir(parents=True, exist_ok=True)
     return d

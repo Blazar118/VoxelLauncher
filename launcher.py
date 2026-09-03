@@ -116,6 +116,29 @@ def _optimized_jvm_args():
     ]
 
 
+def _forge_client_jars(mc_root, base_mc):
+    """
+    Forge 拆分 minecraft jar:
+    返回 libraries/net/minecraft/client 下匹配 base_mc 版本的
+    client-extra / client-slim / client-srg jar 列表(按顺序)。
+    找不到时返回 []。
+    """
+    client_dir = Path(mc_root) / "libraries" / "net" / "minecraft" / "client"
+    if not client_dir.is_dir():
+        return []
+    vers = sorted(d.name for d in client_dir.iterdir()
+                  if d.is_dir() and d.name.startswith(base_mc))
+    if not vers:
+        return []
+    ver = vers[-1]
+    out = []
+    for suffix in ("-extra.jar", "-slim.jar", "-srg.jar"):
+        p = client_dir / ver / ("client-{}{}".format(ver, suffix))
+        if p.exists():
+            out.append(p)
+    return out
+
+
 def build_command(instance, account, java_path, version_data, server_address=None):
     """
     构建完整启动命令(列表形式)。
@@ -142,7 +165,15 @@ def build_command(instance, account, java_path, version_data, server_address=Non
     cp = [str(mc_root / "libraries" / a["path"]) for a in cp_artifacts]
     # 继承版本的 jar 在基础版本目录(如 fabric 继承 1.20.1)
     jar_ver = version_data.get("_jar_version") or version_id
-    cp.append(str(mc_root / "versions" / jar_ver / (jar_ver + ".jar")))
+    # Forge 1.20.1+: minecraft 模块由 Forge 自行从 libraryDirectory 加载
+    # (net/minecraft/client/{mcp}/client-...-srg.jar)，classpath 不能再放
+    # 原版 jar 或 client-extra/slim/srg(否则模块拆分包冲突)
+    if "forge" not in version_id.lower():
+        # 优先从实例目录(game_dir)找jar(全在实例里模式), 找不到回退versions/
+        jar_path = game_dir / (jar_ver + ".jar")
+        if not jar_path.exists():
+            jar_path = mc_root / "versions" / jar_ver / (jar_ver + ".jar")
+        cp.append(str(jar_path))
     classpath = os.pathsep.join(cp)
 
     # assets
@@ -282,11 +313,15 @@ def launch_game(instance, account, java_path, log_cb=None, on_exit=None, server_
 
     mc_root = Path(CONFIG.get("game_dir"))
     version_id = instance["version_id"]
-    vjson = mc_root / "versions" / version_id / (version_id + ".json")
+    # 优先从实例目录检查版本json(全在实例里模式), 找不到回退versions/
+    game_dir = Path(instance.get("game_dir") or (mc_root / "versions" / version_id))
+    vjson = game_dir / (version_id + ".json")
+    if not vjson.exists():
+        vjson = mc_root / "versions" / version_id / (version_id + ".json")
     if not vjson.exists():
         raise RuntimeError("版本 {} 未安装, 请先下载".format(version_id))
     # 解析版本并合并继承链(Fabric/Quilt 继承原版)
-    version_data = version_manager.resolve_version_json(version_id)
+    version_data = version_manager.resolve_version_json(version_id, game_dir=str(game_dir))
 
     # 完整性校验
     problems = verify_launch_files(instance, version_data)

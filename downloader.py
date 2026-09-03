@@ -91,8 +91,11 @@ def download_file(url, dest, expected_sha1=None, resume=True, max_retry=3,
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     primary_url = rewrite_url(url)
-    mirror_url = _force_mirror_url(url)
-    # 候选 URL 列表: 先当前配置源, 失败后切镜像(如果不同)
+    # mirror 始终是另一个源，与 primary 互为备份（官方<->BMCLAPI）
+    if CONFIG.get("download_source", "mojang") == "bmclapi":
+        mirror_url = url
+    else:
+        mirror_url = _force_mirror_url(url)
     use_mirror = False
 
     # 已存在且校验通过 -> 跳过

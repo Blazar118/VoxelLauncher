@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 VoxelLauncher - Tkinter 图形界面主模块
 包含: 主界面(启动)/版本下载/Modrinth模组/实例设置/日志/全局设置
@@ -444,6 +444,7 @@ class VoxelApp:
         self.tab_about = ttk.Frame(self.nb)  # 关于页
         self.tab_history = ttk.Frame(self.nb)  # 历史版本页
         self.tab_friends = ttk.Frame(self.nb)  # 好友页
+        self.tab_music = ttk.Frame(self.nb)  # 音乐页
 
         self.nb.add(self.tab_launch, text=" 启动 ")
         self.nb.add(self.tab_versions, text=" 版本下载 ")
@@ -463,6 +464,7 @@ class VoxelApp:
         self.nb.add(self.tab_about, text=" ℹ 关于 ")
         self.nb.add(self.tab_history, text=" 📦 历史版本 ")
         self.nb.add(self.tab_friends, text=" 👥 好友 ")
+        self.nb.add(self.tab_music, text=" 🎵 音乐 ")
 
         self._build_launch_tab()
         self._build_versions_tab()
@@ -486,6 +488,7 @@ class VoxelApp:
         self._build_services_tab()
         self._build_about_tab()
         self._build_friends_tab()
+        self._build_music_tab()
 
         # 刷新积分显示
         self.root.after(1000, self._refresh_points)
@@ -597,6 +600,7 @@ class VoxelApp:
         box2 = ttk.LabelFrame(f, text="实例 / 版本")
         box2.pack(fill="x", padx=8, pady=4)
         self.inst_combo = ttk.Combobox(box2, state="readonly", width=30)
+        self.inst_combo.bind("<<ComboboxSelected>>", self._on_inst_selected)
         self.inst_combo.pack(side="left", padx=6, pady=4)
         ttk.Button(box2, text="新建实例", command=self._new_instance).pack(
             side="left", padx=3)
@@ -3105,15 +3109,28 @@ class VoxelApp:
         self.ab_enabled_var = tk.BooleanVar(value=CONFIG.get("auto_backup_enabled", False))
         ttk.Checkbutton(row_ab, text="存档自动备份(防坏档, 游戏运行时不备份)",
                         variable=self.ab_enabled_var).pack(side="left")
-        ttk.Label(row_ab, text="间隔:").pack(side="left", padx=(8, 0))
-        self.ab_interval_var = tk.IntVar(value=int(CONFIG.get("auto_backup_interval", 30)))
+        ttk.Label(row_ab, text="模式:").pack(side="left", padx=(8, 0))
+        _ab_mode = "天" if CONFIG.get("auto_backup_mode", "min") == "day" else "分钟"
+        self.ab_mode_var = tk.StringVar(value=_ab_mode)
+        ttk.Combobox(row_ab, state="readonly", width=5, textvariable=self.ab_mode_var,
+                     values=["分钟", "天"]).pack(side="left", padx=2)
+        ttk.Label(row_ab, text="每").pack(side="left", padx=(8, 0))
+        _ab_def = (int(CONFIG.get("auto_backup_interval_day", 1))
+                   if _ab_mode == "天"
+                   else int(CONFIG.get("auto_backup_interval_min", 30)))
+        self.ab_interval_var = tk.IntVar(value=_ab_def)
         ttk.Spinbox(row_ab, from_=1, to=1440, width=5,
                     textvariable=self.ab_interval_var).pack(side="left", padx=2)
-        ttk.Label(row_ab, text="分钟 保留:").pack(side="left", padx=(8, 0))
+        self.ab_unit_var = tk.StringVar(value=_ab_mode)
+        ttk.Label(row_ab, textvariable=self.ab_unit_var).pack(side="left", padx=2)
+        ttk.Label(row_ab, text="备份 保留:").pack(side="left", padx=(8, 0))
         self.ab_keep_var = tk.IntVar(value=int(CONFIG.get("auto_backup_keep", 10)))
         ttk.Spinbox(row_ab, from_=1, to=99, width=4,
                     textvariable=self.ab_keep_var).pack(side="left", padx=2)
         ttk.Label(row_ab, text="份/存档", foreground="#888").pack(side="left")
+        def _ab_mode_changed(*_a):
+            self.ab_unit_var.set(self.ab_mode_var.get())
+        self.ab_mode_var.trace_add("write", _ab_mode_changed)
 
         row_bridge = ttk.Frame(box)
         row_bridge.pack(fill="x", padx=6, pady=3)
@@ -3605,6 +3622,12 @@ class VoxelApp:
             except Exception:
                 pass
 
+    def _on_inst_selected(self, event=None):
+        """实例下拉切换: 自动加载该实例配置, 无需手动刷新"""
+        self._update_inst_detail()
+        self._sync_filters_to_instance()
+        self._reload_mods()
+
     def _update_inst_detail(self):
         name = self.inst_combo.get()
         inst = instance_mod.get_instance(name)
@@ -3966,8 +3989,8 @@ class VoxelApp:
         if not result["ok"] or not result["name"]:
             return
         inst_name = result["name"]
-        # 与 PCL 一致: 只要安装了模组加载器就默认使用合并模式, 不再弹出询问
-        use_merged = True
+        # 默认分离模式: 版本文件在 versions/, 实例数据在 instances/
+        use_merged = False
 
         self.dl_btn.config(state="disabled")
         loader_ver = self.loader_ver_var.get()
@@ -3995,11 +4018,36 @@ class VoxelApp:
                         vid, loader, loader_version=loader_ver, api_version=api_ver,
                         progress_cb=lambda msg, c, t: self._post(
                             "vdl_status", msg))
-                # 创建实例 (默认合并模式, 合并模式下会在版本文件夹内建 mods/saves 等)
-                instance_mod.create_instance(
+                # 创建实例
+                inst = instance_mod.create_instance(
                     inst_name.strip(), version_id,
                     java_path=self._selected_java(),
                     merged_mode=use_merged)
+                # 全在实例里模式: 把版本jar/json复制到实例目录
+                try:
+                    import shutil as _sh
+                    from pathlib import Path as _P
+                    _mc = _P(instance_mod.CONFIG.get("game_dir"))
+                    _idir = _P(inst["game_dir"])
+                    # 复制加载器版本文件
+                    _vdir = _mc / "versions" / version_id
+                    for _ext in (".jar", ".json"):
+                        _src = _vdir / (version_id + _ext)
+                        if _src.exists():
+                            _sh.copy2(_src, _idir / _src.name)
+                    # 复制继承的基础版本文件(如 Fabric 继承原版)
+                    import version_manager as _vm
+                    _vd = _vm.resolve_version_json(version_id)
+                    _base = _vd.get("_jar_version")
+                    if _base and _base != version_id:
+                        _bdir = _mc / "versions" / _base
+                        for _ext in (".jar", ".json"):
+                            _src = _bdir / (_base + _ext)
+                            if _src.exists():
+                                _sh.copy2(_src, _idir / _src.name)
+                    self._post("log", "版本文件已复制到实例目录")
+                except Exception as _e:
+                    self._post("log", "复制版本文件到实例目录失败: " + str(_e))
                 self._post("inst_reload", None)
                 self._post("log", "加载器安装完成: {} (实例 {}, {})".format(
                     version_id, inst_name.strip(), mode_text))
@@ -7219,8 +7267,13 @@ class VoxelApp:
         if hasattr(self, "ab_enabled_var"):
             CONFIG.set("auto_backup_enabled", bool(self.ab_enabled_var.get()))
             try:
-                CONFIG.set("auto_backup_interval",
-                           max(1, min(1440, int(self.ab_interval_var.get()))))
+                mode = self.ab_mode_var.get()
+                CONFIG.set("auto_backup_mode", "day" if mode == "天" else "min")
+                val = max(1, min(1440, int(self.ab_interval_var.get())))
+                if mode == "天":
+                    CONFIG.set("auto_backup_interval_day", min(30, val))
+                else:
+                    CONFIG.set("auto_backup_interval_min", val)
             except Exception:
                 pass
             try:
@@ -9875,19 +9928,24 @@ class VoxelApp:
         return False
 
     def _auto_backup_tick(self):
-        """自动备份定时检查(每分钟一次)"""
+        """自动备份定时检查(每分钟一次), 支持按分钟/按天"""
         try:
             if CONFIG.get("auto_backup_enabled", False):
-                interval_min = int(CONFIG.get("auto_backup_interval", 30))
-                interval_min = max(1, min(1440, interval_min))
+                mode = CONFIG.get("auto_backup_mode", "min")
+                if mode == "day":
+                    interval_sec = max(1, int(CONFIG.get(
+                        "auto_backup_interval_day", 1))) * 86400
+                else:
+                    interval_sec = max(1, min(1440, int(CONFIG.get(
+                        "auto_backup_interval_min", 30)))) * 60
                 last = getattr(self, "_auto_backup_last_run", 0.0)
-                if time.time() - last >= interval_min * 60:
+                if time.time() - last >= interval_sec:
                     # 游戏运行中跳过, 等游戏退出后再备份
                     if not self._is_game_running():
                         self._auto_backup_all()
                         self._auto_backup_last_run = time.time()
                     else:
-                        self._auto_backup_last_run = time.time() - interval_min * 60 + 120
+                        self._auto_backup_last_run = time.time() - interval_sec + 120
         except Exception:
             pass
         try:
@@ -12400,6 +12458,171 @@ A: 下载后进入游戏 -> 选项 -> 资源包 -> 选中启用
             self._append_server_log("已复制外网地址: " + addr)
         else:
             messagebox.showinfo("提示", "外网IP未获取到，请检查网络")
+    # ---------------- 音乐播放器 ----------------
+    def _build_music_tab(self):
+        """多平台音乐播放器: 网易云+酷狗+QQ音乐聚合搜索 + 本地音乐"""
+        import music_player as mp
+        f = self.tab_music
+
+        # 顶部搜索栏
+        top = tk.Frame(f)
+        top.pack(fill="x", padx=10, pady=8)
+        tk.Label(top, text="🎵 多平台音乐", font=("微软雅黑", 12, "bold")).pack(side="left")
+        self.music_search_var = tk.StringVar()
+        entry = tk.Entry(top, textvariable=self.music_search_var, width=28, font=("微软雅黑", 10))
+        entry.pack(side="left", padx=10)
+        entry.bind("<Return>", lambda e: self._music_search())
+        tk.Button(top, text="搜索", command=self._music_search, width=8).pack(side="left", padx=5)
+        tk.Button(top, text="📁 本地音乐", command=self._music_scan_local, width=10).pack(side="left", padx=5)
+        tk.Button(top, text="选择文件夹", command=self._music_choose_dir, width=10).pack(side="left", padx=5)
+        tk.Button(top, text="⬇ 下载到本地", command=self._music_download, width=10).pack(side="left", padx=5)
+
+        # 当前播放信息
+        self.music_now_lbl = tk.Label(f, text="未播放", fg="#666", font=("微软雅黑", 9))
+        self.music_now_lbl.pack(fill="x", padx=10, pady=2)
+
+        # 歌曲列表(增加来源列)
+        list_frame = tk.Frame(f)
+        list_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        columns = ("source", "name", "artist", "album", "duration")
+        self.music_tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=15)
+        self.music_tree.heading("source", text="来源")
+        self.music_tree.heading("name", text="歌曲")
+        self.music_tree.heading("artist", text="歌手")
+        self.music_tree.heading("album", text="专辑")
+        self.music_tree.heading("duration", text="时长")
+        self.music_tree.column("source", width=70, anchor="center")
+        self.music_tree.column("name", width=180)
+        self.music_tree.column("artist", width=110)
+        self.music_tree.column("album", width=130)
+        self.music_tree.column("duration", width=55, anchor="center")
+        self.music_tree.pack(side="left", fill="both", expand=True)
+        sb = ttk.Scrollbar(list_frame, orient="vertical", command=self.music_tree.yview)
+        sb.pack(side="right", fill="y")
+        self.music_tree.configure(yscrollcommand=sb.set)
+        self.music_tree.bind("<Double-1>", lambda e: self._music_play_selected())
+        self.music_songs = []
+
+        # 底部控制栏
+        ctrl = tk.Frame(f)
+        ctrl.pack(fill="x", padx=10, pady=8)
+        tk.Button(ctrl, text="▶ 播放", command=self._music_play_selected, width=8).pack(side="left", padx=3)
+        tk.Button(ctrl, text="⏸ 暂停", command=lambda: mp.pause(), width=8).pack(side="left", padx=3)
+        tk.Button(ctrl, text="⏵ 继续", command=lambda: mp.resume(), width=8).pack(side="left", padx=3)
+        tk.Button(ctrl, text="⏹ 停止", command=lambda: mp.stop(), width=8).pack(side="left", padx=3)
+        tk.Label(ctrl, text="音量:").pack(side="left", padx=(15, 3))
+        self.music_vol_var = tk.DoubleVar(value=70)
+        vol_scale = tk.Scale(ctrl, from_=0, to=100, orient="horizontal", variable=self.music_vol_var,
+                             length=120, showvalue=False, command=self._music_volume)
+        vol_scale.pack(side="left", padx=3)
+        self.music_vol_lbl = tk.Label(ctrl, text="70%", width=5)
+        self.music_vol_lbl.pack(side="left")
+        mp.set_volume(0.7)
+
+        # 状态提示
+        self.music_status_lbl = tk.Label(f, text="提示: 网易云歌曲可播放, 酷狗/QQ音乐暂不支持(接口加密)", fg="#888", font=("微软雅黑", 9))
+        self.music_status_lbl.pack(fill="x", padx=10, pady=2)
+
+    def _music_search(self):
+        """三平台聚合搜索"""
+        import music_player as mp
+        kw = self.music_search_var.get().strip()
+        if not kw:
+            return
+        self.music_status_lbl.config(text="正在搜索网易云+酷狗+QQ音乐...")
+        self.music_tree.delete(*self.music_tree.get_children())
+
+        def _worker():
+            songs = mp.search_songs(kw, limit=15)
+            self.music_songs = songs
+            for s in songs:
+                mins = s["duration"] // 60
+                secs = s["duration"] % 60
+                dur = "{:02d}:{:02d}".format(mins, secs) if s["duration"] > 0 else "--:--"
+                src = s["source"]
+                if not s.get("playable", True):
+                    src = src + "(不可播)"
+                self.music_tree.insert("", "end", values=(src, s["name"], s["artist"], s["album"], dur))
+            self.music_status_lbl.config(text="找到 {} 首歌曲(网易云可播放, 酷狗/QQ音乐仅展示)".format(len(songs)))
+
+        self._thread(_worker)
+
+    def _music_scan_local(self):
+        """扫描本地音乐"""
+        import music_player as mp
+        self.music_status_lbl.config(text="正在扫描本地音乐...")
+        self.music_tree.delete(*self.music_tree.get_children())
+
+        def _worker():
+            songs = mp.scan_local_music()
+            self.music_songs = songs
+            for s in songs:
+                self.music_tree.insert("", "end", values=(s["source"], s["name"], s["artist"], s["album"], "--:--"))
+            self.music_status_lbl.config(text="本地音乐文件夹: {} (找到 {} 首)".format(mp.get_local_music_dir(), len(songs)))
+
+        self._thread(_worker)
+
+    def _music_choose_dir(self):
+        """选择本地音乐文件夹"""
+        import music_player as mp
+        from tkinter import filedialog
+        path = filedialog.askdirectory(title="选择音乐文件夹")
+        if path:
+            mp.set_local_music_dir(path)
+            self._music_scan_local()
+
+    def _music_download(self):
+        """下载选中的网易云歌曲到本地音乐文件夹"""
+        import music_player as mp
+        sel = self.music_tree.selection()
+        if not sel:
+            self.music_status_lbl.config(text="请先选择一首歌曲")
+            return
+        idx = self.music_tree.index(sel[0])
+        if idx >= len(self.music_songs):
+            return
+        song = self.music_songs[idx]
+        if song["source"] != "网易云":
+            self.music_status_lbl.config(text="只有网易云的歌曲支持下载")
+            return
+
+        def _worker():
+            self.music_status_lbl.config(text="正在下载: {} - {}...".format(song["name"], song["artist"]))
+            path = mp.download_to_local(song)
+            if path:
+                self.music_status_lbl.config(text="✅ 已下载到: " + path)
+            else:
+                self.music_status_lbl.config(text="❌ 下载失败(版权限制)")
+
+        self._thread(_worker)
+
+    def _music_play_selected(self):
+        """播放选中的歌曲"""
+        import music_player as mp
+        sel = self.music_tree.selection()
+        if not sel:
+            self.music_status_lbl.config(text="请先选择一首歌曲")
+            return
+        idx = self.music_tree.index(sel[0])
+        if idx >= len(self.music_songs):
+            return
+        song = self.music_songs[idx]
+        if not song.get("playable", True):
+            self.music_status_lbl.config(text="{}的歌曲暂不支持播放(接口加密)".format(song["source"]))
+            return
+        mp.play_song(song,
+                     on_play=lambda msg: self.music_now_lbl.config(text=msg),
+                     on_error=lambda msg: self.music_status_lbl.config(text="播放失败: " + msg))
+
+    def _music_volume(self, val):
+        """音量调节"""
+        import music_player as mp
+        v = int(float(val))
+        self.music_vol_lbl.config(text="{}%".format(v))
+        mp.set_volume(v / 100.0)
+
+
+
 
 
 def main():

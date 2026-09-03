@@ -162,7 +162,10 @@ def get_base_game_version(version_id, game_dir=None):
       1.20.1(原版)                -> 1.20.1
     """
     game_dir = game_dir or CONFIG.get("game_dir")
-    vjson_path = get_version_dir(game_dir, version_id) / (version_id + ".json")
+    # 优先从实例目录(game_dir根)找版本json(全在实例里模式), 找不到再回退versions/
+    vjson_path = Path(game_dir) / (version_id + ".json")
+    if not vjson_path.exists():
+        vjson_path = get_version_dir(game_dir, version_id) / (version_id + ".json")
     if not vjson_path.exists():
         # 本地无描述文件: 从 id 尾部尽量推断(如 xxx-1.20.1)
         return version_id.split("-")[-1] if "-" in version_id else version_id
@@ -342,7 +345,10 @@ def resolve_version_json(version_id, game_dir=None, _depth=0):
     if _depth > 8:
         raise ValueError("版本继承链过深: " + version_id)
     game_dir = game_dir or CONFIG.get("game_dir")
-    vjson_path = get_version_dir(game_dir, version_id) / (version_id + ".json")
+    # 优先从实例目录(game_dir根)找版本json(全在实例里模式), 找不到再回退versions/
+    vjson_path = Path(game_dir) / (version_id + ".json")
+    if not vjson_path.exists():
+        vjson_path = get_version_dir(game_dir, version_id) / (version_id + ".json")
     if not vjson_path.exists():
         raise FileNotFoundError("版本描述文件缺失: " + version_id)
     data = json.loads(vjson_path.read_text(encoding="utf-8"))
@@ -574,12 +580,12 @@ def download_assets(version_json, progress_cb=None, cancel_event=None):
             done[0], total)
 
 
-def check_version_files(version_id, version_data=None):
+def check_version_files(version_id, game_dir=None, version_data=None):
     """
     启动前文件完整性检查。返回缺失/损坏文件描述列表(空列表表示完整)。
     支持继承版本(会自动解析到原版)。
     """
-    game_dir = CONFIG.get("game_dir")
+    game_dir = game_dir or CONFIG.get("game_dir")
     problems = []
     if version_data is None:
         try:
@@ -589,12 +595,15 @@ def check_version_files(version_id, version_data=None):
 
     # 游戏 jar(继承版本用原版 jar)
     jar_ver = version_data.get("_jar_version") or version_id
-    jar = get_version_dir(game_dir, jar_ver) / (jar_ver + ".jar")
+    # 优先从实例目录(game_dir)找jar(全在实例里模式), 找不到回退versions/
+    jar = Path(game_dir) / (jar_ver + ".jar")
+    if not jar.exists():
+        jar = get_version_dir(game_dir, jar_ver) / (jar_ver + ".jar")
     if not jar.exists():
         problems.append("游戏 jar 缺失: {}".format(jar))
 
     cp_artifacts, native_artifacts = collect_launch_libraries(version_data)
-    lib_base = Path(game_dir) / "libraries"
+    lib_base = Path(CONFIG.get("game_dir")) / "libraries"  # 全局共享库
     for art in cp_artifacts:
         if not (lib_base / art["path"]).exists():
             problems.append("依赖库缺失: {}".format(art["path"]))
@@ -603,7 +612,7 @@ def check_version_files(version_id, version_data=None):
             problems.append("Native库缺失: {}".format(ca["path"]))
 
     idx = version_data.get("assetIndex") or {}
-    idx_file = Path(game_dir) / "assets" / "indexes" / (idx.get("id", "") + ".json")
+    idx_file = Path(CONFIG.get("game_dir")) / "assets" / "indexes" / (idx.get("id", "") + ".json")  # 全局共享资源
     if idx and not idx_file.exists():
         problems.append("资源索引缺失: {}".format(idx_file))
     return problems

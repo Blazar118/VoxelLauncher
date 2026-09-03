@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 VoxelLauncher 统一版本号管理（唯一权威来源）
 - 启动器、官网、Release 全部从这里读
@@ -9,7 +9,7 @@ import os
 # ---------------------------------------------------------------
 # 版本号（唯一权威来源）
 # ---------------------------------------------------------------
-VERSION = "2.2.17"
+VERSION = "2.2.28"
 VERSION_TAG = "v" + VERSION  # v2.1.0
 
 # 项目信息
@@ -29,6 +29,36 @@ WEBSITE_URL = "https://blazar118.github.io/VoxelLauncher/"
 # 按从新到旧排列
 # ---------------------------------------------------------------
 HISTORY_VERSIONS = [
+    {
+        "tag": "v2.2.28",
+        "title": "v2.2.28 - 音乐下载版",
+        "desc": "多平台音乐播放器支持下载到本地(网易云歌曲可下载到指定文件夹); 修复音乐播放器启动崩溃; 优化版权限制提示",
+        "url": GITHUB_URL + "/releases/download/v2.2.28/VoxelLauncher.exe",
+    },
+    {
+        "tag": "v2.2.27",
+        "title": "v2.2.27 - 多平台音乐版",
+        "desc": "新增多平台音乐聚合搜索(网易云+酷狗+QQ音乐); 支持本地音乐文件夹扫描播放; 网易云歌曲自动缓存播放; 来源平台标注",
+        "url": GITHUB_URL + "/releases/download/v2.2.27/VoxelLauncher.exe",
+    },
+    {
+        "tag": "v2.2.26",
+        "title": "v2.2.26 - 网易云音乐版",
+        "desc": "新增网易云音乐播放器(搜索/播放/暂停/音量控制); 版权限制自动检测; 临时文件缓存",
+        "url": GITHUB_URL + "/releases/download/v2.2.26/VoxelLauncher.exe",
+    },
+    {
+        "tag": "v2.2.25",
+        "title": "v2.2.25 - 全实例存储版",
+        "desc": "实例存储改为全在实例目录(版本jar/json也放instances/下); 安装后自动复制版本文件到实例; libraries/assets全局共享; certifi证书修复; 下载源双源互备",
+        "url": GITHUB_URL + "/releases/download/v2.2.25/VoxelLauncher.exe",
+    },
+    {
+        "tag": "v2.2.18",
+        "title": "v2.2.18 - Forge启动修复版",
+        "desc": "修复Forge 1.20.1启动模块冲突; 支持Java 25; 26.2新版本兼容",
+        "url": GITHUB_URL + "/releases/download/v2.2.18/VoxelLauncher.exe",
+    },
     {
         "tag": "v2.2.7",
         "title": "v2.2.7 - 默认合并模式版",

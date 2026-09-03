@@ -114,7 +114,12 @@
             .shots { grid-template-columns: 1fr; }
             .nav a { display: none; }
         }
-    </style>
+        .changelog { max-width: 800px; margin: 0 auto 40px; text-align: left; }
+    .log-item { padding: 12px 20px; margin: 8px 0; background: rgba(255,255,255,0.05); border-radius: 8px; border-left: 3px solid #6c5ce7; }
+    .log-item .version { font-weight: bold; color: #6c5ce7; margin-right: 12px; }
+    .log-item .date { color: #888; font-size: 0.9em; }
+    .log-item p { margin: 6px 0 0 0; color: #ccc; }
+</style>
 </head>
 <body>
 
@@ -135,7 +140,7 @@
     <h1>Voxel<span>Launcher</span></h1>
     <p class="sub">一个功能全、上手快的 Minecraft 第三方启动器<br>装模组、开服、联机、玩点花活，一个软件全搞定</p>
     <a href="#download" class="btn">立即下载</a>
-    <div class="meta">当前版本 v2.2.17 · Windows 10/11 · 免安装，下载即用</div>
+    <div class="meta">当前版本 v2.2.28 · Windows 10/11 · 免安装，下载即用</div>
 </div>
 
 <section id="features">
@@ -277,6 +282,10 @@
             <h3>🎒 背包系统</h3>
             <p>对，启动器里还有背包。各种活动给的道具、兑换的奖励都塞这里，说不定以后还能开盲盒。</p>
         </div>
+        <div class="fun-card">
+            <h3>🎵 多平台音乐播放器</h3>
+            <p>网易云+酷狗+QQ音乐聚合搜索，网易云歌曲可下载到本地，支持本地音乐文件夹播放，启动器内直接听歌。</p>
+        </div>
     </div>
 </section>
 
@@ -304,7 +313,30 @@
 
 <section id="download">
     <div class="dl-box">
-        <h2>下载 VoxelLauncher</h2>
+        <h2>更新日志</h2>
+    <div class="changelog">
+        <div class="log-item">
+            <span class="version">v2.2.28</span>
+            <span class="date">2026-09-03</span>
+            <p>多平台音乐播放器支持下载到本地；修复音乐播放器启动崩溃；优化版权限制提示</p>
+        </div>
+        <div class="log-item">
+            <span class="version">v2.2.27</span>
+            <span class="date">2026-09-03</span>
+            <p>新增多平台音乐聚合搜索(网易云+酷狗+QQ音乐)；支持本地音乐文件夹扫描播放</p>
+        </div>
+        <div class="log-item">
+            <span class="version">v2.2.26</span>
+            <span class="date">2026-09-03</span>
+            <p>新增网易云音乐播放器(搜索/播放/暂停/音量控制)</p>
+        </div>
+        <div class="log-item">
+            <span class="version">v2.2.25</span>
+            <span class="date">2026-09-02</span>
+            <p>实例存储改为全在实例目录；支持Java 25和26.2新版本；下载源双源互备</p>
+        </div>
+    </div>
+    <h2>下载 VoxelLauncher</h2>
         <p>免费、开源、没广告<br>下载下来是个 exe，双击就能用，不用安装</p>
         <a href="https://github.com/Blazar118/VoxelLauncher/releases/latest/download/VoxelLauncher.exe" class="btn">下载 VoxelLauncher.exe</a>
         <div style="margin-top:20px;font-size:13px;color:#666;">
@@ -357,7 +389,7 @@
 </section>
 
 <footer>
-    <p>VoxelLauncher v2.2.17 · 由 Blazar118 开发 · 开源免费</p>
+    <p>VoxelLauncher v2.2.28 · 由 Blazar118 开发 · 开源免费</p>
     <p style="margin-top:8px;">
         <a href="https://github.com/Blazar118/VoxelLauncher" target="_blank">GitHub</a>
         ·

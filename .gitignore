@@ -64,3 +64,30 @@ gradle88.zip
 
 # 打包好的 exe
 *.exe
+
+# ---------------- 追加规则 (v2.2.43) ----------------
+# 语音识别模型(75MB, 不进仓库, exe已内置)
+whisper_models/
+# Verity mod 反编译产物(第三方二进制)
+*.class
+_vcls/
+# 本地日志
+long_log.txt
+# 一次性调试/构建脚本
+build_*.py
+test_*.py
+fix_*.py
+switch_*.py
+set_*.py
+patch_*.py
+update_version_*.py
+_inspect_site.py
+_patch_about.py
+_patch_site_login.py
+_patch_voice.py
+calm_verity.py
+cn_verity.py
+check_mod_deps.py
+# 临时截图
+tmp_sb*.png
+tmp_shot*.png

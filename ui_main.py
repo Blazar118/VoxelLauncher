@@ -487,6 +487,13 @@ class VoxelApp:
         self._build_server_tab()
         self._build_services_tab()
         self._build_about_tab()
+        # 若已解锁彩蛋, 恢复常驻视频页签
+        try:
+            from config import CONFIG
+            if CONFIG.get("video_tab_enabled"):
+                self._build_video_tab()
+        except Exception:
+            pass
         self._build_friends_tab()
         self._build_music_tab()
 
@@ -499,6 +506,29 @@ class VoxelApp:
         self._apply_cf_tab()
 
     # ---------------- 主启动页 ----------------
+    def _get_main_hwnd(self):
+        """获取主窗口真正的顶层句柄"""
+        try:
+            self.root.update_idletasks()
+            hwnd = int(self.root.winfo_id())
+            # winfo_id 返回的是 Tk 子窗口, 取最外层顶层窗口
+            try:
+                import ctypes
+                ga_root = 2  # GA_ROOT: 根窗口
+                top = ctypes.windll.user32.GetAncestor(
+                    ctypes.c_void_p(hwnd), ga_root)
+                if top:
+                    return int(top)
+            except Exception:
+                pass
+            return hwnd
+        except Exception:
+            return None
+
+    def _apply_cyber_glass(self):
+        """已移除美化(毛玻璃曾导致卡顿), 保留空实现兼容旧调用"""
+        pass
+
     def _apply_launch_background(self):
         """应用启动页背景/主题壁纸"""
         # 主题色
@@ -645,7 +675,7 @@ class VoxelApp:
         # 启动区
         box4 = ttk.Frame(f)
         box4.pack(fill="x", padx=8, pady=6)
-        self.launch_btn = ttk.Button(box4, text="启动游戏",
+        self.launch_btn = ttk.Button(box4, text="🚀 启动游戏",
                                      command=self._launch, width=16)
         self.launch_btn.pack(side="left")
         ttk.Button(box4, text="导出启动脚本",
@@ -2106,6 +2136,12 @@ class VoxelApp:
         self.dl_btn = ttk.Button(bottom, text="下载选中版本",
                                  command=self._download_version)
         self.dl_btn.pack(side="left", padx=4)
+        ttk.Label(bottom, text="下载到:").pack(side="left", padx=(10, 4))
+        self.dl_inst_var = tk.StringVar()
+        self.dl_inst_combo = ttk.Combobox(bottom, textvariable=self.dl_inst_var,
+            state="readonly", width=16)
+        self.dl_inst_combo.pack(side="left", padx=4)
+        self._refresh_dl_inst_combo()
         ttk.Label(bottom, text="一键安装加载器:").pack(side="left", padx=(14, 4))
         self.loader_var = tk.StringVar(value="fabric")
         for txt, val in [("Fabric", "fabric"), ("Quilt", "quilt"),
@@ -3036,6 +3072,14 @@ class VoxelApp:
     # ---------------- 设置页 ----------------
     def _build_settings_tab(self):
         f = self.tab_settings
+        # 彩蛋: 千万别点按钮(放在顶部避免被挤没)
+        chaos_frame = ttk.Frame(f)
+        chaos_frame.pack(anchor="w", padx=10, pady=(8, 4))
+        ttk.Label(chaos_frame, text="⚠️ 警告: 下面这个按钮千万别点",
+                  foreground="#c0392b", font=("", 10, "bold")).pack(anchor="w")
+        self._chaos_btn = ttk.Button(chaos_frame, text="千万别点我",
+                                      command=self._do_not_click)
+        self._chaos_btn.pack(anchor="w", pady=4)
         box = ttk.LabelFrame(f, text="全局设置")
         box.pack(fill="x", padx=8, pady=8)
 
@@ -3185,8 +3229,8 @@ class VoxelApp:
         ttk.Label(row_ai1, text="AI 服务商:").pack(side="left")
         self.setting_ai_provider = ttk.Combobox(
             row_ai1, state="readonly", width=12,
-            values=["豆包", "Deepseek", "Kimi"])
-        provider_map = {"doubao": "豆包", "deepseek": "Deepseek", "kimi": "Kimi"}
+            values=["豆包", "Deepseek", "Kimi", "智谱清言"])
+        provider_map = {"doubao": "豆包", "deepseek": "Deepseek", "kimi": "Kimi", "zhipu": "智谱清言"}
         current_provider = CONFIG.get("ai_provider", "doubao")
         self.setting_ai_provider.set(provider_map.get(current_provider, "豆包"))
         self.setting_ai_provider.pack(side="left", padx=4)
@@ -3255,14 +3299,7 @@ class VoxelApp:
         ttk.Button(dl_btn_frame, text="📁 打开文件夹",
                    command=self._open_download_folder).pack(side="left", padx=2)
 
-        # 彩蛋: 千万别点按钮(PCL2 同款搞笑功能)
-        chaos_frame = ttk.Frame(f)
-        chaos_frame.pack(anchor="w", padx=10, pady=(20, 4))
-        ttk.Label(chaos_frame, text="⚠️ 警告: 下面这个按钮千万别点",
-                  foreground="#c0392b", font=("", 10, "bold")).pack(anchor="w")
-        self._chaos_btn = ttk.Button(chaos_frame, text="千万别点我",
-                                      command=self._do_not_click)
-        self._chaos_btn.pack(anchor="w", pady=4)
+
 
     # ============================================================
     # 队列轮询(所有跨线程 UI 更新都走这里)
@@ -3284,6 +3321,18 @@ class VoxelApp:
             self._log(payload)
         elif kind == "status":
             self.status_lbl.config(text=payload)
+        elif kind == "tv_results":
+            self._tv_apply_results(payload)
+        elif kind == "ai_diag_done":
+            self._ai_diag_done(payload)
+        elif kind == "voice_done":
+            self._voice_done(payload)
+        elif kind == "music_lyrics_loaded":
+            self._music_apply_lyrics(payload)
+        elif kind == "music_lyrics_translated":
+            self._music_apply_translation(payload)
+        elif kind == "music_status":
+            self.music_status_lbl.config(text=payload)
         elif kind == "vdl_status":
             self.vdl_status.config(text=payload)
         elif kind == "mr_status":
@@ -3855,6 +3904,37 @@ class VoxelApp:
                                  "{}  [{}]  {}".format(v["id"], tag,
                                                        v.get("releaseTime", "")))
 
+    def _refresh_dl_inst_combo(self):
+        """刷新版本下载页'下载到'实例下拉(分离模式实例->instances/{name}/, 合并模式->versions/{id}/)"""
+        import instance as instance_mod
+        try:
+            insts = instance_mod.list_instances()
+        except Exception:
+            insts = []
+        self._dl_insts = insts
+        if not hasattr(self, "dl_inst_combo"):
+            return
+        labels = []
+        for inst in insts:
+            nm = inst.get("name", "?")
+            mode = "(合并)" if inst.get("merged_mode") else ""
+            labels.append("{} {}".format(nm, mode).strip())
+        if labels:
+            self.dl_inst_combo["values"] = labels
+            cur = getattr(self, "current_instance", None)
+            if cur:
+                for idx, inst in enumerate(insts):
+                    if inst.get("name") == cur.get("name"):
+                        self.dl_inst_combo.current(idx)
+                        break
+                else:
+                    self.dl_inst_combo.current(0)
+            else:
+                self.dl_inst_combo.current(0)
+        else:
+            self.dl_inst_combo["values"] = []
+            self.dl_inst_var.set("(无实例)")
+
     def _download_version(self):
         sel = self.ver_list.curselection()
         if not sel:
@@ -3867,13 +3947,26 @@ class VoxelApp:
         if idx >= len(shown):
             return
         vid = shown[idx]["id"]
+        # 目标实例文件夹: 从"下载到"下拉读取
+        import instance as instance_mod
+        target_dir = None
+        insts = getattr(self, "_dl_insts", [])
+        combo = getattr(self, "dl_inst_combo", None)
+        if combo is not None:
+            si = combo.current()
+            if insts and 0 <= si < len(insts):
+                target_dir = instance_mod.get_instance_game_dir(insts[si])
         self.dl_btn.config(state="disabled")
-        self._post("vdl_status", "正在下载: " + vid)
+        if target_dir:
+            self._post("vdl_status", "正在下载: {} -> {}".format(vid, target_dir))
+        else:
+            self._post("vdl_status", "正在下载: " + vid)
         def _worker():
             try:
                 version_manager.download_version(
                     vid, progress_cb=lambda msg, c, t: self._post(
-                        "vdl_status", msg))
+                        "vdl_status", msg),
+                    target_dir=target_dir)
                 self._post("vdl_status", "版本 {} 下载完成".format(vid))
                 self._post("log", "版本 {} 下载完成".format(vid))
             except Exception as exc:
@@ -7049,7 +7142,7 @@ class VoxelApp:
         def _worker():
             try:
                 # 先尝试当前选中的服务商
-                provider_reverse = {"豆包": "doubao", "Deepseek": "deepseek", "Kimi": "kimi"}
+                provider_reverse = {"豆包": "doubao", "Deepseek": "deepseek", "Kimi": "kimi", "智谱清言": "zhipu"}
                 current_provider = provider_reverse.get(self.setting_ai_provider.get(), "doubao")
                 ai_chat.ai_chat.set_provider(current_provider)
                 ok, msg = ai_chat.ai_chat.test_connection()
@@ -7248,7 +7341,7 @@ class VoxelApp:
         # 保存微软 Client ID
         CONFIG.set("ms_client_id", self.setting_mscid.get().strip())
         # 保存 AI 配置
-        provider_reverse = {"豆包": "doubao", "Deepseek": "deepseek", "Kimi": "kimi"}
+        provider_reverse = {"豆包": "doubao", "Deepseek": "deepseek", "Kimi": "kimi", "智谱清言": "zhipu"}
         ai_provider = provider_reverse.get(self.setting_ai_provider.get(), "doubao")
         CONFIG.set("ai_provider", ai_provider)
         CONFIG.set("ai_api_key", self.setting_ai_key.get().strip())
@@ -8733,6 +8826,7 @@ class VoxelApp:
         self._build_performance_tab()
         self._build_resourcepack_preview_tab()
         self._build_mod_sort_tab()
+        self._build_voice_tab()
         # 初始化实例列表
         self._refresh_tools_instance()
 
@@ -9119,6 +9213,8 @@ class VoxelApp:
         ttk.Button(top, text="🔄 刷新日志列表", command=self._refresh_crash_logs).pack(
             side="left", padx=2)
         ttk.Button(top, text="🔍 智能分析", command=self._analyze_crash_advanced).pack(
+            side="left", padx=2)
+        ttk.Button(top, text="🤖 AI 诊断", command=self._ai_diagnose_crash).pack(
             side="left", padx=2)
         ttk.Button(top, text="📁 打开日志文件夹", command=self._open_crash_logs_dir).pack(
             side="left", padx=2)
@@ -9545,7 +9641,158 @@ class VoxelApp:
             messagebox.showerror("操作失败", str(exc))
 
 
-    # ---- 材质包预览 ----
+    def _build_voice_tab(self):
+        """语音助手子页: 麦克风说话控制启动器"""
+        tab = ttk.Frame(self.tools_nb)
+        self.tools_nb.add(tab, text=" 🎙️ 语音助手 ")
+        top = ttk.Frame(tab)
+        top.pack(fill="x", padx=8, pady=8)
+        self.voice_btn = ttk.Button(top, text="🎙️ 按住说话 (4秒)",
+                                    command=self._voice_listen)
+        self.voice_btn.pack(side="left", padx=4)
+        self.voice_status_lbl = ttk.Label(top, text="就绪", foreground="#888")
+        self.voice_status_lbl.pack(side="left", padx=10)
+        ttk.Label(top, text="需要麦克风权限 · 识别引擎首次使用会自动下载(~75MB)",
+                  foreground="#888").pack(side="left", padx=10)
+        mid = ttk.LabelFrame(tab, text=" 识别结果 / 执行状态 ")
+        mid.pack(fill="both", expand=True, padx=8, pady=4)
+        self.voice_result = tk.Text(mid, height=10, font=("Consolas", 10),
+                                    bg="#0d1117", fg="#7dd3fc", wrap="word")
+        self.voice_result.pack(side="left", fill="both", expand=True, padx=4, pady=4)
+        sb = ttk.Scrollbar(mid, command=self.voice_result.yview)
+        sb.pack(side="right", fill="y")
+        self.voice_result.configure(yscrollcommand=sb.set)
+        help_lf = ttk.LabelFrame(tab, text=" 支持的口令 ")
+        help_lf.pack(fill="x", padx=8, pady=4)
+        import voice_assistant
+        ttk.Label(help_lf, text=voice_assistant.VoiceAssistant.help_text(),
+                  justify="left", foreground="#aaa").pack(anchor="w", padx=8, pady=4)
+
+    def _voice_listen(self):
+        """点击麦克风: 录音4秒 -> 转写 -> 执行命令"""
+        self.voice_btn.config(state="disabled")
+        self.voice_status_lbl.config(text="🎙️ 正在听... (说点什么)")
+        self.voice_result.delete("1.0", "end")
+        self.voice_result.insert("end", "正在录音... 请说话\n")
+        self.voice_result.update()
+
+        def _work():
+            try:
+                import voice_assistant
+                va = voice_assistant.get_assistant("tiny")
+                if not va.is_ready:
+                    self._post("voice_done", (
+                        None, "语音识别引擎还在加载(首次需下载模型), 请稍后再试", None))
+                    return
+                text, err = va.listen_and_transcribe(4.0)
+                if err:
+                    self._post("voice_done", (None, err, None))
+                    return
+                parsed = va.parse_command(text)
+                action, kw = None, None
+                if parsed:
+                    action, kw = parsed
+                self._post("voice_done", (text, None, (action, kw)))
+            except Exception as e:
+                self._post("voice_done", (None, "语音处理出错: " + str(e), None))
+
+        self._thread(_work)
+
+    def _voice_done(self, payload):
+        """主线程: 显示识别结果并执行命令"""
+        self.voice_btn.config(state="normal")
+        text, err, act = payload
+        self.voice_result.delete("1.0", "end")
+        if err:
+            self.voice_status_lbl.config(text="⚠️ 出错", foreground="#f87171")
+            self.voice_result.insert("end", "❌ " + err + "\n")
+            return
+        self.voice_status_lbl.config(text="✅ 已识别", foreground="#4ade80")
+        self.voice_result.insert("end", "🗣️ 你说: " + text + "\n")
+        if not act or not act[0]:
+            self.voice_result.insert("end", "\n❓ 没听懂, 试试这些口令:\n")
+            import voice_assistant
+            self.voice_result.insert("end", voice_assistant.VoiceAssistant.help_text() + "\n")
+            return
+        action, kw = act
+        ok, msg = self._execute_voice_action(action, kw)
+        if ok:
+            self.voice_result.insert("end", "\n✅ 执行: " + msg + "\n")
+        else:
+            self.voice_result.insert("end", "\n⚠️ " + msg + "\n")
+
+    def _execute_voice_action(self, action, kw):
+        """执行语音命令, 返回 (ok, 描述)"""
+        from config import CONFIG
+        try:
+            if action == "launch_game":
+                self._launch()
+                return True, "启动游戏"
+            if action == "stop_game":
+                self._stop_game()
+                return True, "停止游戏"
+            if action == "music_play":
+                try:
+                    self.nb.select(self.tab_music)
+                except Exception:
+                    pass
+                return True, "播放音乐(请在音乐页选择歌曲)"
+            if action == "music_pause":
+                self._music_pause()
+                return True, "暂停音乐"
+            if action == "music_resume":
+                self._music_resume()
+                return True, "继续播放"
+            if action == "music_next":
+                self._music_next()
+                return True, "下一首"
+            if action == "music_prev":
+                self._music_prev()
+                return True, "上一首"
+            if action == "music_stop":
+                self._music_stop()
+                return True, "停止音乐"
+            if action == "volume_up":
+                import music_player as mp
+                cur = mp.get_volume() if hasattr(mp, "get_volume") else 0.7
+                mp.set_volume(min(1.0, cur + 0.1))
+                return True, "音量 +10%"
+            if action == "volume_down":
+                import music_player as mp
+                cur = mp.get_volume() if hasattr(mp, "get_volume") else 0.7
+                mp.set_volume(max(0.0, cur - 0.1))
+                return True, "音量 -10%"
+            if action == "theme_cyber":
+                CONFIG.set("theme", "cyber")
+                self._update_theme_desc()
+                self._apply_launch_background()
+                return True, "切换到科技暗色主题"
+            if action == "theme_default":
+                CONFIG.set("theme", "default")
+                self._update_theme_desc()
+                self._apply_launch_background()
+                return True, "切换到默认主题"
+            if action == "open_music":
+                self.nb.select(self.tab_music)
+                return True, "打开音乐页"
+            if action == "open_video":
+                if hasattr(self, "tab_video"):
+                    self.nb.select(self.tab_video)
+                    return True, "打开视频页"
+                return False, "视频页未启用"
+            if action == "open_tools":
+                self.nb.select(self.tab_tools)
+                return True, "打开工具页"
+            if action == "open_settings":
+                self.nb.select(self.tab_settings)
+                return True, "打开设置页"
+            if action == "what_can_you_do":
+                return True, "我是语音助手! 说「启动游戏」「下一首」「打开音乐」等口令控制启动器"
+            return False, "未知命令"
+        except Exception as e:
+            return False, "执行出错: " + str(e)
+
+
     def _build_resourcepack_preview_tab(self):
         """材质包预览页"""
         tab = ttk.Frame(self.tools_nb)
@@ -10886,6 +11133,8 @@ class VoxelApp:
             row=1, column=0, sticky="w", padx=5, pady=2)
         tk.Label(info_frame, text="下载源: Mojang / BMCLAPI", font=("Arial", 10)).grid(
             row=1, column=1, sticky="w", padx=5, pady=2)
+        tk.Label(info_frame, text="作者邮箱: blazar@email.cn", font=("Arial", 10),
+                 fg="#38bdf8").grid(row=2, column=0, sticky="w", padx=5, pady=2)
         # 使用说明 (带滚动)
         help_frame = tk.LabelFrame(f, text=" 使用说明 ", padx=10, pady=5)
         help_frame.pack(fill="both", expand=True, padx=10, pady=5)
@@ -11668,11 +11917,311 @@ A: 下载后进入游戏 -> 选项 -> 资源包 -> 选中启用
 
 
     def _on_about_title_click(self, event=None):
-        """隐蔽彩蛋: 连点标题10次触发(不留任何提示, 靠玩家自己发现)"""
+        """隐蔽彩蛋: 连点标题30次开启常驻「📺 视频」页签(以后不用再点)"""
         self._about_click_count += 1
-        if self._about_click_count >= 10:
+        if self._about_click_count >= 30:
             self._about_click_count = 0
-            self._show_egg("隐藏成就解锁")
+            self._enable_video_tab()
+
+
+    # ---------------- 📺 在线电视 / 常驻视频页签 ----------------
+    def _enable_video_tab(self):
+        """彩蛋触发: 开启常驻「📺 视频」页签(一次开启, 永久保留)"""
+        from config import CONFIG
+        try:
+            CONFIG.set("video_tab_enabled", True)
+        except Exception:
+            pass
+        if not hasattr(self, "tab_video"):
+            try:
+                self._build_video_tab()
+            except Exception as e:
+                print("构建视频页签失败:", e)
+        try:
+            self.nb.select(self.tab_video)
+        except Exception:
+            pass
+
+    def _build_video_tab(self):
+        """常驻视频页签: 完整的在线电视界面"""
+        self.tab_video = ttk.Frame(self.nb)
+        self.nb.add(self.tab_video, text=" 📺 视频 ")
+        self._build_tv_content(self.tab_video)
+
+    def _build_tv_content(self, parent):
+        """在 parent(窗口或页签) 内构建电视界面: 顶部栏 + 左列表 + 右内嵌播放区"""
+        import video_search
+        try:
+            import edge_embed
+            self._tv_player = edge_embed.EdgePlayer()
+        except Exception:
+            self._tv_player = None
+        self._tv_items = []
+        self._tv_embedding = False
+
+        top = tk.Frame(parent, bg="#1c1c1e")
+        top.pack(fill="x", padx=8, pady=6)
+        tk.Label(top, text="📺 平台:", bg="#1c1c1e", fg="#ffffff",
+                 font=("Arial", 10)).pack(side="left")
+        self.tv_platform_var = tk.StringVar(value="bilibili")
+        names = video_search.platform_names()
+        self.tv_platform_combo = ttk.Combobox(
+            top, textvariable=self.tv_platform_var,
+            values=[pid for pid, _ in names], state="readonly", width=10)
+        self.tv_platform_combo.pack(side="left", padx=4)
+        self.tv_platform_combo.bind("<<ComboboxSelected>>",
+                                    lambda e: self._tv_platform_changed())
+        self.tv_search_var = tk.StringVar()
+        self.tv_search_entry = tk.Entry(top, textvariable=self.tv_search_var,
+            width=26, bg="#2c2c2e", fg="#ffffff", insertbackground="#ffffff",
+            relief="flat")
+        self.tv_search_entry.pack(side="left", padx=4, ipady=4)
+        self.tv_search_entry.bind("<Return>", lambda e: self._tv_search())
+        tk.Button(top, text="🔍 搜索", command=self._tv_search,
+            bg="#ff4757", fg="#ffffff", relief="flat", padx=12,
+            font=("Arial", 10)).pack(side="left", padx=4)
+        self.tv_login_btn = tk.Button(top, text="🌐 平台首页/登录",
+            command=self._tv_open_home, bg="#57606f", fg="#ffffff",
+            relief="flat", padx=10, font=("Arial", 9))
+        self.tv_login_btn.pack(side="left", padx=6)
+
+        self.tv_hint_lbl = tk.Label(parent, text="", bg="#1c1c1e", fg="#aaaaaa",
+                                    font=("Arial", 9), anchor="w")
+        self.tv_hint_lbl.pack(fill="x", padx=10)
+        self._tv_platform_changed()
+
+        # 中部: 左列表 + 右播放区
+        mid = tk.Frame(parent, bg="#1c1c1e")
+        mid.pack(fill="both", expand=True, padx=8, pady=4)
+
+        left = tk.Frame(mid, bg="#1c1c1e")
+        left.pack(side="left", fill="y")
+        cols = ("title", "duration", "author", "play")
+        self.tv_tree = ttk.Treeview(left, columns=cols, show="headings", height=16)
+        self.tv_tree.heading("title", text="标题")
+        self.tv_tree.heading("duration", text="时长")
+        self.tv_tree.heading("author", text="作者/UP主")
+        self.tv_tree.heading("play", text="播放量")
+        self.tv_tree.column("title", width=380)
+        self.tv_tree.column("duration", width=62)
+        self.tv_tree.column("author", width=110)
+        self.tv_tree.column("play", width=72)
+        tv_sb = ttk.Scrollbar(left, command=self.tv_tree.yview)
+        self.tv_tree.configure(yscrollcommand=tv_sb.set)
+        tv_sb.pack(side="right", fill="y")
+        self.tv_tree.pack(side="left", fill="both", expand=True)
+        self.tv_tree.bind("<Double-1>", lambda e: self._tv_play_selected())
+        self.tv_tree.tag_configure("even", background="#26262a")
+
+        # 右侧内嵌播放区
+        play_panel = tk.Frame(mid, bg="#1c1c1e")
+        play_panel.pack(side="left", fill="both", expand=True, padx=(8, 0))
+        self._tv_play_area = tk.Frame(play_panel, bg="#101012", width=620, height=400)
+        self._tv_play_area.pack(fill="both", expand=True)
+        self._tv_play_hint = tk.Label(self._tv_play_area, text=(
+            "🎬 内嵌播放区\n\n"
+            "在左侧搜索/选中视频后, 点「▶ 播放」或双击\n"
+            "视频会直接在这个区域里播放(内置 Edge 内核)\n\n"
+            "点「🌐 平台首页/登录」可在区域内打开平台首页\n"
+            "登录后即可享受高清/收藏等账号权益"), bg="#101012", fg="#888888",
+            font=("Microsoft YaHei UI", 10), justify="left", anchor="nw")
+        self._tv_play_hint.place(x=16, y=12)
+        # 尺寸跟随
+        self._tv_play_area.bind("<Configure>", self._tv_player_resize)
+
+        # 底部
+        bottom = tk.Frame(parent, bg="#1c1c1e")
+        bottom.pack(fill="x", padx=8, pady=6)
+        tk.Button(bottom, text="▶ 内嵌播放选中", command=self._tv_play_selected,
+            bg="#2ed573", fg="#ffffff", relief="flat", padx=14,
+            font=("Arial", 10)).pack(side="left", padx=4)
+        tk.Button(bottom, text="⏹ 停止内嵌播放", command=self._tv_embed_stop,
+            bg="#747d8c", fg="#ffffff", relief="flat", padx=12,
+            font=("Arial", 10)).pack(side="left", padx=4)
+        self.tv_status_lbl = tk.Label(bottom, text="",
+            bg="#1c1c1e", fg="#dddddd", font=("Arial", 9))
+        self.tv_status_lbl.pack(side="left", padx=10)
+
+    def _tv_player_resize(self, event=None):
+        """播放区尺寸变化时跟随"""
+        try:
+            p = getattr(self, "_tv_player", None)
+            area = getattr(self, "_tv_play_area", None)
+            if p and area:
+                p.resize(area.winfo_width(), area.winfo_height())
+        except Exception:
+            pass
+
+    def _tv_embed_play(self, url, name):
+        """内嵌播放: 用 Edge 嵌入到播放区"""
+        import webbrowser
+        area = getattr(self, "_tv_play_area", None)
+        p = getattr(self, "_tv_player", None)
+        if area is None:
+            return
+        if p is None or not p.available:
+            self.tv_status_lbl.config(text="Edge 不可用, 已改用浏览器打开")
+            try:
+                webbrowser.open(url)
+            except Exception:
+                pass
+            return
+        w = max(area.winfo_width(), 320)
+        h = max(area.winfo_height(), 240)
+        self.tv_status_lbl.config(text="正在内嵌加载: " + str(name)[:24] + " ...")
+        try:
+            self._tv_play_hint.config(text="正在加载: " + str(name))
+        except Exception:
+            pass
+        ok = p.play(area.winfo_id(), url, w, h)
+        if ok:
+            self.tv_status_lbl.config(
+                text="已内嵌播放: " + str(name)[:24] + " (可直接在页面里操作/登录)")
+        else:
+            self.tv_status_lbl.config(
+                text="内嵌失败(" + str(p.last_error) + "), 已改用浏览器打开")
+            try:
+                webbrowser.open(url)
+            except Exception:
+                pass
+
+    def _tv_embed_stop(self):
+        """停止内嵌播放并恢复提示"""
+        p = getattr(self, "_tv_player", None)
+        if p:
+            p.close()
+        try:
+            self._tv_play_hint.config(text=(
+                "🎬 内嵌播放区\n\n"
+                "在左侧搜索/选中视频后, 点「▶ 内嵌播放选中」或双击\n"
+                "视频会直接在这个区域里播放(内置 Edge 内核)\n\n"
+                "点「🌐 平台首页/登录」可在区域内打开平台首页\n"
+                "登录后即可享受高清/收藏等账号权益"))
+        except Exception:
+            pass
+        self.tv_status_lbl.config(text="已停止内嵌播放")
+
+    # ---------------- 📺 在线电视(彩蛋) ----------------
+    def _open_tv_window(self):
+        """打开在线电视窗口(复用 _build_tv_content)"""
+        if getattr(self, "_tv_win", None) is not None:
+            try:
+                if self._tv_win.winfo_exists():
+                    self._tv_win.lift()
+                    return
+            except Exception:
+                pass
+        win = tk.Toplevel(self.root)
+        win.title("📺 VoxelTV · 在线电视")
+        win.geometry("1180x720")
+        win.minsize(900, 560)
+        win.configure(bg="#1c1c1e")
+        self._tv_win = win
+        self._build_tv_content(win)
+        try:
+            win.protocol("WM_DELETE_WINDOW",
+                         lambda: (self._tv_embed_stop(),
+                                  win.destroy(),
+                                  setattr(self, "_tv_win", None)))
+        except Exception:
+            pass
+
+    def _tv_platform_changed(self):
+        """平台切换: 更新提示并清空列表"""
+        import video_search
+        pid = self.tv_platform_var.get()
+        if pid == "bilibili":
+            self.tv_hint_lbl.config(
+                text="B站: 启动器内直接搜索出结果, 选中后点「▶ 内嵌播放选中」或双击, 视频会在右侧区域内播放")
+        else:
+            name = video_search.PLATFORMS.get(pid, ("", ""))[0]
+            self.tv_hint_lbl.config(
+                text="{}: 平台接口有风控, 点「搜索」将打开官方搜索页(浏览器), 点「🌐 平台首页/登录」可在右侧区域内打开并登录".format(name))
+        try:
+            self.tv_tree.delete(*self.tv_tree.get_children())
+        except Exception:
+            pass
+        self._tv_items = []
+
+    def _tv_search(self):
+        """搜索: B站结构化搜索, 其他平台打开官方搜索页"""
+        import video_search
+        kw = self.tv_search_var.get().strip()
+        if not kw:
+            messagebox.showwarning("提示", "请输入搜索关键词")
+            return
+        pid = self.tv_platform_var.get()
+        if pid == "bilibili":
+            self.tv_status_lbl.config(text="正在搜索B站: " + kw)
+            self.tv_tree.delete(*self.tv_tree.get_children())
+            self.tv_platform_combo.config(state="disabled")
+            self.tv_search_entry.config(state="disabled")
+            self._thread(lambda: self._tv_search_worker(pid, kw))
+        else:
+            name = video_search.PLATFORMS.get(pid, ("", ""))[0]
+            url = video_search.platform_search_url(pid, kw)
+            try:
+                webbrowser.open(url)
+            except Exception:
+                pass
+            self.tv_status_lbl.config(
+                text="已在浏览器打开 {} 搜索页「{}」, 点视频即可观看".format(name, kw))
+            self.tv_tree.delete(*self.tv_tree.get_children())
+            self._tv_items = []
+
+    def _tv_search_worker(self, pid, kw):
+        """后台搜索 B站"""
+        import video_search
+        items = video_search.search_bilibili(kw, limit=30)
+        self._post("tv_results", items)
+
+    def _tv_apply_results(self, items):
+        """主线程: 显示B站搜索结果"""
+        try:
+            self.tv_platform_combo.config(state="readonly")
+            self.tv_search_entry.config(state="normal")
+            self.tv_tree.delete(*self.tv_tree.get_children())
+            self._tv_items = items or []
+            if not self._tv_items:
+                self.tv_status_lbl.config(text="没有搜到结果, 换个关键词试试")
+                return
+            for i, it in enumerate(self._tv_items):
+                self.tv_tree.insert("", "end", values=(
+                    it.get("title", ""), it.get("duration", ""),
+                    it.get("author", ""), it.get("play", "")),
+                    tags=("even",) if i % 2 else ())
+            self.tv_status_lbl.config(
+                text="B站搜索到 {} 个结果, 双击任意一条即可播放".format(len(self._tv_items)))
+        except Exception:
+            pass
+
+    def _tv_play_selected(self):
+        """播放选中的视频(浏览器打开)"""
+        import video_search
+        sel = self.tv_tree.selection()
+        if not sel:
+            messagebox.showinfo("提示", "请先在列表里选中一个视频")
+            return
+        items = getattr(self, "_tv_items", [])
+        idx = self.tv_tree.index(sel[0])
+        if not (0 <= idx < len(items)):
+            return
+        it = items[idx]
+        pid = self.tv_platform_var.get()
+        vid = it.get("bvid") or it.get("url") or ""
+        url = video_search.video_url(pid, vid)
+        if not url:
+            self.tv_status_lbl.config(text="该视频无法打开")
+            return
+        self._tv_embed_play(url, it.get("title", ""))
+
+    def _tv_open_home(self):
+        """打开平台首页(可登录账号)"""
+        import video_search
+        pid = self.tv_platform_var.get()
+        url = video_search.platform_home(pid)
+        if url:
+            self._tv_embed_play(url, "平台首页/登录")
 
     def _show_egg(self, title):
         """显示彩蛋"""
@@ -12178,6 +12727,72 @@ A: 下载后进入游戏 -> 选项 -> 资源包 -> 选中启用
 
     # ================================================================
     # 强大崩溃分析 (使用 crash_analyzer 模块)
+    def _ai_diagnose_crash(self):
+        """AI 智能诊断: 崩溃日志喂给 AI(智谱/Kimi/豆包) 给出修复方案"""
+        sel = self.crash_log_listbox.curselection()
+        if not sel:
+            messagebox.showinfo("提示", "请先选择一个崩溃日志")
+            return
+        game_dir = self._get_tools_instance_dir()
+        if not game_dir:
+            return
+        item = self.crash_log_listbox.get(sel[0])
+        if item.startswith("("):
+            return
+        log_name = item.split(" | ")[0]
+        log_path = str(Path(game_dir) / "crash-reports" / log_name)
+
+        # 检查 AI 是否配置
+        try:
+            from ai_chat import ai_chat
+            if not ai_chat.is_configured():
+                if not messagebox.askyesno(
+                        "未配置 AI", "还没有配置 AI 接口(智谱/Kimi/豆包)。\n"
+                        "去「设置」页配置一个 API 就能用 AI 排错专家。\n\n"
+                        "现在去设置?"):
+                    return
+                self._open_settings_tab()
+                return
+        except Exception as e:
+            messagebox.showerror("错误", str(e))
+            return
+
+        self.crash_result.delete("1.0", "end")
+        self.crash_result.insert("end", "🤖 AI 排错专家分析中...\n")
+        self.crash_result.insert("end", "（日志已交给 AI, 通常需要 10~30 秒）\n\n")
+        self.crash_result.update()
+
+        def _work():
+            try:
+                from ai_chat import ai_chat
+                import crash_analyzer
+                ok, diag = crash_analyzer.ai_diagnose_latest(log_path, ai_chat)
+                self._post("ai_diag_done", (ok, diag, log_name))
+            except Exception as e:
+                self._post("ai_diag_done", (False, "诊断出错: " + str(e), log_name))
+
+        self._thread(_work)
+
+    def _ai_diag_done(self, payload):
+        """主线程: 显示 AI 诊断结果"""
+        ok, diag, log_name = payload
+        self.crash_result.delete("1.0", "end")
+        if not ok:
+            self.crash_result.insert("end", "❌ " + str(diag) + "\n")
+            return
+        self.crash_result.insert("end", "=== 🤖 AI 排错专家诊断 ===\n\n")
+        self.crash_result.insert("end", "📄 日志: {}\n\n".format(log_name))
+        self.crash_result.insert("end", str(diag) + "\n")
+        self.crash_result.insert("end", "\n────────────\n")
+        self.crash_result.insert("end", "💡 提示: 按上面的步骤操作; 如果还不行, 可以把诊断结果发给我")
+
+    def _open_settings_tab(self):
+        """切换到设置页"""
+        try:
+            self.nb.select(self.tab_settings)
+        except Exception:
+            pass
+
     # ================================================================
     def _analyze_crash_advanced(self):
         """强大的崩溃日志分析"""
@@ -12463,29 +13078,85 @@ A: 下载后进入游戏 -> 选项 -> 资源包 -> 选中启用
         """多平台音乐播放器: 网易云+酷狗+QQ音乐聚合搜索 + 本地音乐"""
         import music_player as mp
         f = self.tab_music
+        if not hasattr(self, '_music_follow_sys'):
+            self._music_follow_sys = None
 
-        # 顶部搜索栏
-        top = tk.Frame(f)
-        top.pack(fill="x", padx=10, pady=8)
-        tk.Label(top, text="🎵 多平台音乐", font=("微软雅黑", 12, "bold")).pack(side="left")
+        # ============ 网易云音乐风格 ============
+        NAV_BG = "#1f1f23"
+        MAIN_BG = "#2b2b30"
+        PANEL_BG = "#333338"
+        ACCENT = "#ec4141"
+        ACCENT_DARK = "#c62f2f"
+        TEXT_FG = "#f0f0f0"
+        SUB_FG = "#9aa5b1"
+        LINE = "#3a3a40"
+
+        # 用 tk.Frame 包一层, 便于设置深色背景
+        f = tk.Frame(self.tab_music, bg=MAIN_BG)
+        f.pack(fill="both", expand=True)
+
+        # ---- 顶部红色搜索条(网易云风格) ----
+        top = tk.Frame(f, bg=ACCENT)
+        top.pack(fill="x")
+        tk.Label(top, text="  ♪ 网易云音乐", font=("微软雅黑", 12, "bold"), bg=ACCENT, fg="white").pack(side="left", padx=10, pady=9)
         self.music_search_var = tk.StringVar()
-        entry = tk.Entry(top, textvariable=self.music_search_var, width=28, font=("微软雅黑", 10))
-        entry.pack(side="left", padx=10)
+        entry = tk.Entry(top, textvariable=self.music_search_var, width=24, font=("微软雅黑", 10),
+                         bg="white", fg="#333", relief="flat")
+        entry.pack(side="left", padx=8, ipady=3)
         entry.bind("<Return>", lambda e: self._music_search())
-        tk.Button(top, text="搜索", command=self._music_search, width=8).pack(side="left", padx=5)
-        tk.Button(top, text="📁 本地音乐", command=self._music_scan_local, width=10).pack(side="left", padx=5)
-        tk.Button(top, text="选择文件夹", command=self._music_choose_dir, width=10).pack(side="left", padx=5)
-        tk.Button(top, text="⬇ 下载到本地", command=self._music_download, width=10).pack(side="left", padx=5)
+        def _top_btn(txt, cmd, w=8):
+            return tk.Button(top, text=txt, command=cmd, bg=ACCENT_DARK, fg="white", relief="flat",
+                             activebackground="#b32828", activeforeground="white", cursor="hand2",
+                             font=("微软雅黑", 9, "bold"), width=w, bd=0, highlightthickness=0)
+        _top_btn("🔍 搜索", self._music_search, 7).pack(side="left", padx=(0, 5))
+        _top_btn("💬 桌面歌词", self._music_toggle_desktop_lyric, 9).pack(side="left", padx=5)
+        _top_btn("⬇ 下载", self._music_download, 6).pack(side="left", padx=5)
+
+        # ---- 主体: 左导航 + 右内容 ----
+        body = tk.Frame(f, bg=MAIN_BG)
+        body.pack(fill="both", expand=True, padx=8, pady=(8, 4))
+
+        # 左导航
+        nav = tk.Frame(body, bg=NAV_BG, width=128)
+        nav.pack(side="left", fill="y")
+        nav.pack_propagate(False)
+        def _nav_btn(txt, cmd):
+            return tk.Button(nav, text=txt, command=cmd, bg=NAV_BG, fg=TEXT_FG, relief="flat",
+                             anchor="w", padx=14, pady=8, font=("微软雅黑", 10), cursor="hand2",
+                             activebackground="#3a3a40", activeforeground="white", bd=0, highlightthickness=0)
+        _nav_btn("🔍 搜索", self._music_search).pack(fill="x")
+        _nav_btn("📁 本地音乐", self._music_scan_local).pack(fill="x")
+        _nav_btn("📂 选文件夹", self._music_choose_dir).pack(fill="x")
+        tk.Frame(nav, bg=LINE, height=1).pack(fill="x", padx=10, pady=6)
+        _nav_btn("📜 听歌历史", self._music_show_history).pack(fill="x")
+        _nav_btn("♥ 我的收藏", self._music_show_favorites).pack(fill="x")
+
+        # 右主区
+        right = tk.Frame(body, bg=MAIN_BG)
+        right.pack(side="left", fill="both", expand=True, padx=(8, 0))
 
         # 当前播放信息
-        self.music_now_lbl = tk.Label(f, text="未播放", fg="#666", font=("微软雅黑", 9))
-        self.music_now_lbl.pack(fill="x", padx=10, pady=2)
+        self.music_now_lbl = tk.Label(right, text="未播放", fg=ACCENT, bg=MAIN_BG, font=("微软雅黑", 9, "bold"))
+        self.music_now_lbl.pack(fill="x", pady=(0, 3))
 
-        # 歌曲列表(增加来源列)
-        list_frame = tk.Frame(f)
-        list_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        # 歌曲列表
+        list_frame = tk.Frame(right, bg=MAIN_BG)
+        list_frame.pack(fill="both", expand=True)
         columns = ("source", "name", "artist", "album", "duration")
-        self.music_tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=15)
+        try:
+            style = ttk.Style()
+            style.configure("Music.Treeview", background=PANEL_BG, fieldbackground=PANEL_BG,
+                            foreground=TEXT_FG, rowheight=28, borderwidth=0, font=("微软雅黑", 9))
+            style.configure("Music.Treeview.Heading", background="#3f3f45", foreground="white",
+                            font=("微软雅黑", 9, "bold"), borderwidth=0)
+            style.map("Music.Treeview", background=[("selected", ACCENT)],
+                      foreground=[("selected", "white")])
+            style.map("Music.Treeview.Heading", background=[("active", "#4a4a50")])
+            tv_style = "Music.Treeview"
+        except Exception:
+            tv_style = ""
+        self.music_tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=15,
+                                       style=tv_style)
         self.music_tree.heading("source", text="来源")
         self.music_tree.heading("name", text="歌曲")
         self.music_tree.heading("artist", text="歌手")
@@ -12503,25 +13174,82 @@ A: 下载后进入游戏 -> 选项 -> 资源包 -> 选中启用
         self.music_tree.bind("<Double-1>", lambda e: self._music_play_selected())
         self.music_songs = []
 
-        # 底部控制栏
-        ctrl = tk.Frame(f)
-        ctrl.pack(fill="x", padx=10, pady=8)
-        tk.Button(ctrl, text="▶ 播放", command=self._music_play_selected, width=8).pack(side="left", padx=3)
-        tk.Button(ctrl, text="⏸ 暂停", command=lambda: mp.pause(), width=8).pack(side="left", padx=3)
-        tk.Button(ctrl, text="⏵ 继续", command=lambda: mp.resume(), width=8).pack(side="left", padx=3)
-        tk.Button(ctrl, text="⏹ 停止", command=lambda: mp.stop(), width=8).pack(side="left", padx=3)
-        tk.Label(ctrl, text="音量:").pack(side="left", padx=(15, 3))
+        # 歌词显示区域(可收起, 网易云红色高亮)
+        self._music_lyric_collapsed = False
+        lyric_toggle_frame = tk.Frame(right, bg=MAIN_BG)
+        lyric_toggle_frame.pack(fill="x", pady=(4, 0))
+        self._music_lyric_toggle = tk.Button(lyric_toggle_frame, text="▼ 歌词", command=self._music_toggle_lyric,
+                                             font=("微软雅黑", 9), relief="flat", cursor="hand2",
+                                             bg=MAIN_BG, fg=ACCENT, activebackground=MAIN_BG, activeforeground=ACCENT,
+                                             bd=0, highlightthickness=0)
+        self._music_lyric_toggle.pack(side="left")
+        tk.Button(lyric_toggle_frame, text="🌐 翻译歌词", command=self._music_translate_manual,
+                  font=("微软雅黑", 9), relief="flat", cursor="hand2",
+                  bg=MAIN_BG, fg=ACCENT, activebackground=MAIN_BG, activeforeground=ACCENT,
+                  bd=0, highlightthickness=0).pack(side="left", padx=8)
+        self._music_lyric_frame = tk.LabelFrame(right, text="", padx=5, pady=5, bg=PANEL_BG, fg=TEXT_FG)
+        self._music_lyric_frame.pack(fill="x", pady=5)
+        self.music_lyric_list = tk.Listbox(self._music_lyric_frame, height=5, font=("微软雅黑", 10),
+                                           bg="#1a1a22", fg=TEXT_FG, selectbackground=ACCENT,
+                                           selectforeground="white", activestyle="none", relief="flat")
+        self.music_lyric_list.pack(fill="x")
+        self.music_lyric_list.insert(0, "暂无歌词 (播放歌曲后自动加载)")
+        self._music_lyrics = []
+        self._music_lyric_job = None
+
+        # ---- 底部控制栏(深色) ----
+        ctrl = tk.Frame(f, bg=MAIN_BG)
+        ctrl.pack(fill="x", padx=10, pady=(4, 2))
+        def _play_btn(txt, cmd, w=6, accent=False):
+            bg = ACCENT if accent else "#3a3a40"
+            fgc = "white" if accent else TEXT_FG
+            return tk.Button(ctrl, text=txt, command=cmd, bg=bg, fg=fgc, relief="flat", width=w,
+                             activebackground="#b32828" if accent else "#4a4a50",
+                             activeforeground="white", cursor="hand2", font=("微软雅黑", 9), bd=0, highlightthickness=0)
+        _play_btn("⏮", self._music_prev, 4).pack(side="left", padx=2)
+        _play_btn("▶ 播放", self._music_play_selected, 6, accent=True).pack(side="left", padx=2)
+        _play_btn("⏸ 暂停", self._music_pause, 6).pack(side="left", padx=2)
+        _play_btn("⏵ 继续", self._music_resume, 6).pack(side="left", padx=2)
+        _play_btn("⏹ 停止", self._music_stop, 5).pack(side="left", padx=2)
+        _play_btn("⏭", self._music_next, 4).pack(side="left", padx=2)
+        # 播放模式切换
+        self._music_mode_var = tk.StringVar(value="列表循环")
+        self._music_mode_btn = tk.Button(ctrl, textvariable=self._music_mode_var,
+                                         command=self._music_toggle_mode, width=9, relief="flat",
+                                         bg="#3a3a40", fg=ACCENT, activebackground="#4a4a50",
+                                         activeforeground=ACCENT, font=("微软雅黑", 9), cursor="hand2")
+        self._music_mode_btn.pack(side="left", padx=6)
+
+        # 第二行: 收藏/音量/跟随系统
+        ctrl2 = tk.Frame(f, bg=MAIN_BG)
+        ctrl2.pack(fill="x", padx=10, pady=(2, 4))
+        self._music_fav_btn = tk.Button(ctrl2, text="♡ 收藏", command=self._music_favorite_current, width=8,
+                                        bg="#3a3a40", fg=TEXT_FG, relief="flat", cursor="hand2",
+                                        activebackground="#4a4a50", activeforeground="white", font=("微软雅黑", 9))
+        self._music_fav_btn.pack(side="left", padx=2)
+        tk.Label(ctrl2, text="音量:", bg=MAIN_BG, fg=SUB_FG).pack(side="left", padx=(10, 3))
         self.music_vol_var = tk.DoubleVar(value=70)
-        vol_scale = tk.Scale(ctrl, from_=0, to=100, orient="horizontal", variable=self.music_vol_var,
-                             length=120, showvalue=False, command=self._music_volume)
+        vol_scale = tk.Scale(ctrl2, from_=0, to=100, orient="horizontal", variable=self.music_vol_var,
+                             length=120, showvalue=False, command=self._music_volume, bg=MAIN_BG, fg=TEXT_FG,
+                             highlightthickness=0, troughcolor="#3a3a40")
         vol_scale.pack(side="left", padx=3)
-        self.music_vol_lbl = tk.Label(ctrl, text="70%", width=5)
+        self.music_vol_lbl = tk.Label(ctrl2, text="70%", width=5, bg=MAIN_BG, fg=SUB_FG)
         self.music_vol_lbl.pack(side="left")
+        # 跟随系统音量开关
+        self._music_follow_sys = tk.BooleanVar(value=True)
+        self.music_follow_chk = tk.Checkbutton(ctrl2, text="跟随系统", variable=self._music_follow_sys,
+                                               command=self._music_toggle_follow, font=("微软雅黑", 9),
+                                               bg=MAIN_BG, fg=SUB_FG, activebackground=MAIN_BG,
+                                               selectcolor="#1f1f23")
+        self.music_follow_chk.pack(side="left", padx=5)
         mp.set_volume(0.7)
 
         # 状态提示
-        self.music_status_lbl = tk.Label(f, text="提示: 网易云歌曲可播放, 酷狗/QQ音乐暂不支持(接口加密)", fg="#888", font=("微软雅黑", 9))
+        self.music_status_lbl = tk.Label(f, text="提示: 网易云歌曲可播放, 酷狗/QQ音乐暂不支持(接口加密)",
+                                         fg=SUB_FG, bg=MAIN_BG, font=("微软雅黑", 9))
         self.music_status_lbl.pack(fill="x", padx=10, pady=2)
+        # 启动自动下一首检查
+        self._music_start_end_checker()
 
     def _music_search(self):
         """三平台聚合搜索"""
@@ -12546,6 +13274,195 @@ A: 下载后进入游戏 -> 选项 -> 资源包 -> 选中启用
             self.music_status_lbl.config(text="找到 {} 首歌曲(网易云可播放, 酷狗/QQ音乐仅展示)".format(len(songs)))
 
         self._thread(_worker)
+
+    def _music_pause(self):
+        """暂停并给出反馈"""
+        import music_player as mp
+        mp.pause()
+        if mp.is_paused():
+            self.music_now_lbl.config(text="⏸ 已暂停: {}".format(
+                (mp.get_current_song() or {}).get("name", "")))
+            self.music_status_lbl.config(text="已暂停")
+        else:
+            self.music_status_lbl.config(text="当前没有正在播放的歌曲, 无法暂停")
+
+    def _music_resume(self):
+        """继续并给出反馈"""
+        import music_player as mp
+        if not mp.is_playing():
+            self.music_status_lbl.config(text="当前没有已暂停的歌曲")
+            return
+        if not mp.is_paused():
+            self.music_status_lbl.config(text="歌曲正在播放中, 无需继续")
+            return
+        mp.resume()
+        self.music_now_lbl.config(text="⏵ 继续播放: {}".format(
+            (mp.get_current_song() or {}).get("name", "")))
+        self.music_status_lbl.config(text="已继续播放")
+
+    def _music_stop(self):
+        """停止并给出反馈"""
+        import music_player as mp
+        mp.stop()
+        self.music_now_lbl.config(text="⏹ 已停止")
+        self.music_status_lbl.config(text="已停止播放")
+        self.music_lyric_list.delete(0, tk.END)
+        self.music_lyric_list.insert(0, "已停止 (播放歌曲后自动加载歌词)")
+
+    def _music_show_history(self):
+        """显示听歌历史"""
+        import music_player as mp
+        self.music_status_lbl.config(text="正在加载历史...")
+        self.music_tree.delete(*self.music_tree.get_children())
+
+        def _worker():
+            hist = mp.get_history()
+            self.music_songs = []
+            for song, t in hist:
+                self.music_songs.append(song)
+                src = song.get("source", "")
+                self.music_tree.insert("", "end",
+                                       values=(src, song.get("name", ""), song.get("artist", ""),
+                                               "播放于 " + t, ""))
+            self.music_status_lbl.config(text="听歌历史: {} 首 (双击播放)".format(len(hist)))
+
+        self._thread(_worker)
+
+    def _music_show_favorites(self):
+        """显示收藏列表"""
+        import music_player as mp
+        self.music_status_lbl.config(text="正在加载收藏...")
+        self.music_tree.delete(*self.music_tree.get_children())
+
+        def _worker():
+            favs = mp.get_favorites()
+            self.music_songs = favs
+            for song in favs:
+                src = song.get("source", "")
+                self.music_tree.insert("", "end",
+                                       values=(src, song.get("name", ""), song.get("artist", ""),
+                                               song.get("album", ""), ""))
+            self.music_status_lbl.config(text="收藏列表: {} 首 (双击播放)".format(len(favs)))
+
+        self._thread(_worker)
+
+    def _music_favorite_current(self):
+        """收藏/取消收藏当前选中歌曲"""
+        import music_player as mp
+        sel = self.music_tree.selection()
+        if not sel:
+            self.music_status_lbl.config(text="请先选择一首歌曲再收藏")
+            return
+        idx = self.music_tree.index(sel[0])
+        if idx >= len(self.music_songs):
+            return
+        song = self.music_songs[idx]
+        if mp.is_favorite(song):
+            mp.remove_favorite(song)
+            self.music_status_lbl.config(text="已取消收藏: {}".format(song.get("name", "")))
+            self._music_update_fav_btn(song)
+        else:
+            mp.toggle_favorite(song)
+            self.music_status_lbl.config(text="♥ 已收藏: {}".format(song.get("name", "")))
+            self._music_update_fav_btn(song)
+
+    def _music_update_fav_btn(self, song=None):
+        """更新收藏按钮状态"""
+        try:
+            import music_player as mp
+            if song is None:
+                cur = mp.get_current_song()
+                if cur:
+                    song = cur
+            if song is not None and mp.is_favorite(song):
+                self._music_fav_btn.config(text="♥ 已收藏")
+            else:
+                self._music_fav_btn.config(text="♡ 收藏")
+        except Exception:
+            pass
+
+    def _music_toggle_mode(self):
+        """切换播放模式: 顺序->列表循环->单曲循环->随机->顺序"""
+        import music_player as mp
+        modes = [("order", "顺序播放"), ("loop", "列表循环"), ("single", "单曲循环"), ("shuffle", "随机播放")]
+        cur = mp.get_play_mode()
+        idx = 0
+        for i, (m, _) in enumerate(modes):
+            if m == cur:
+                idx = i
+                break
+        nxt_idx = (idx + 1) % len(modes)
+        mp.set_play_mode(modes[nxt_idx][0])
+        self._music_mode_var.set(modes[nxt_idx][1])
+        self.music_status_lbl.config(text="播放模式: " + modes[nxt_idx][1])
+
+    def _music_next(self):
+        """播下一首"""
+        import music_player as mp
+        cur = mp.get_current_song()
+        nxt = mp.get_next_song(cur)
+        if nxt:
+            self._music_play_by_song(nxt)
+        else:
+            self.music_status_lbl.config(text="已经是最后一首 (可切换列表循环)")
+
+    def _music_prev(self):
+        """播上一首(在播放列表里往前找)"""
+        import music_player as mp
+        playlist = mp.get_playlist()
+        cur = mp.get_current_song()
+        if not playlist:
+            self.music_status_lbl.config(text="没有播放列表")
+            return
+        n = len(playlist)
+        if cur is None:
+            self._music_play_by_song(playlist[0])
+            return
+        try:
+            cur_idx = playlist.index(cur)
+            prev = playlist[(cur_idx - 1) % n]
+        except ValueError:
+            prev = playlist[0]
+        self._music_play_by_song(prev)
+
+    def _music_play_by_song(self, song):
+        """直接播放指定歌曲(供下一首/上一首/历史/收藏用)"""
+        import music_player as mp
+        if not song.get("playable", True):
+            self.music_status_lbl.config(text="{}的歌曲暂不支持播放(接口加密)".format(song.get("source", "")))
+            return
+        # 清空歌词
+        self.music_lyric_list.delete(0, tk.END)
+        self.music_lyric_list.insert(0, "加载歌词中...")
+        self._music_lyrics = []
+        mp.set_playlist(mp.get_playlist())
+        self._music_update_fav_btn(song)
+        if self._music_follow_sys.get():
+            vol = mp.sync_system_volume()
+            self.music_vol_var.set(int(vol * 100))
+        mp.play_song(song,
+                     on_play=lambda msg: self.music_now_lbl.config(text=msg),
+                     on_error=lambda msg: self.music_status_lbl.config(text="播放失败: " + msg),
+                     on_lyrics=self._music_on_lyrics)
+        if self._music_lyric_job:
+            self.root.after_cancel(self._music_lyric_job)
+        self._music_update_lyric()
+
+    def _music_check_end(self):
+        """检查歌曲是否播放完毕, 自动切下一首"""
+        import music_player as mp
+        try:
+            if mp.is_music_ended():
+                cur = mp.get_current_song()
+                nxt = mp.get_next_song(cur)
+                if nxt and nxt != cur:
+                    self._music_play_by_song(nxt)
+                elif nxt == cur:
+                    # 单曲循环: 重播
+                    self._music_play_by_song(cur)
+        except Exception:
+            pass
+        self.root.after(500, self._music_check_end)
 
     def _music_scan_local(self):
         """扫描本地音乐"""
@@ -12610,9 +13527,237 @@ A: 下载后进入游戏 -> 选项 -> 资源包 -> 选中启用
         if not song.get("playable", True):
             self.music_status_lbl.config(text="{}的歌曲暂不支持播放(接口加密)".format(song["source"]))
             return
+        # 清空歌词
+        self.music_lyric_list.delete(0, tk.END)
+        self.music_lyric_list.insert(0, "加载歌词中...")
+        self._music_lyrics = []
+        # 设置当前播放列表(用于下一首/上一首)
+        mp.set_playlist(self.music_songs)
+        # 更新收藏按钮状态
+        self._music_update_fav_btn(song)
+        # 同步系统音量
+        if self._music_follow_sys.get():
+            import music_player as mp
+            vol = mp.sync_system_volume()
+            self.music_vol_var.set(int(vol * 100))
         mp.play_song(song,
                      on_play=lambda msg: self.music_now_lbl.config(text=msg),
-                     on_error=lambda msg: self.music_status_lbl.config(text="播放失败: " + msg))
+                     on_error=lambda msg: self.music_status_lbl.config(text="播放失败: " + msg),
+                     on_lyrics=self._music_on_lyrics)
+        # 启动歌词更新定时器
+        if self._music_lyric_job:
+            self.root.after_cancel(self._music_lyric_job)
+        self._music_update_lyric()
+
+    def _music_start_end_checker(self):
+        """启动播放结束检查(自动下一首)"""
+        try:
+            self.root.after(500, self._music_check_end)
+        except Exception:
+            pass
+
+    def _music_on_lyrics(self, lyrics):
+        """歌词加载完成回调(在后台线程被调用, 只投递不操作UI)"""
+        self._post("music_lyrics_loaded", lyrics)
+
+    def _music_apply_lyrics(self, lyrics):
+        """主线程执行: 应用加载好的歌词"""
+        import music_player as mp
+        self._music_lyrics = lyrics
+        self.music_lyric_list.delete(0, tk.END)
+        if not lyrics:
+            # 纯音乐(无歌词)
+            self.music_lyric_list.insert(tk.END, "🎵 纯音乐，请欣赏")
+            self.music_status_lbl.config(text="纯音乐 (无歌词)")
+            self._refresh_desktop_lyric()
+            return
+        # 先显示原文
+        for i, (time, text) in enumerate(lyrics):
+            self.music_lyric_list.insert(tk.END, text)
+        self.music_status_lbl.config(text="已加载歌词 ({}行)".format(len(lyrics)))
+        self._refresh_desktop_lyric()
+        # 检测外语歌, 自动翻译
+        if mp.is_foreign_lyrics(lyrics):
+            self.music_status_lbl.config(text="检测到外语歌词, 正在AI翻译...")
+            # 后台翻译(翻译结果通过队列回主线程)
+            def _translate_worker():
+                import music_player as mp
+                translated, err = mp.translate_lyrics(lyrics)
+                if translated:
+                    self._post("music_lyrics_translated", translated)
+                else:
+                    self._post("music_status", "翻译失败: " + (err or "未知原因"))
+            import threading
+            threading.Thread(target=_translate_worker, daemon=True).start()
+
+    def _music_translate_manual(self):
+        """手动触发翻译"""
+        import music_player as mp
+        if not self._music_lyrics:
+            self.music_status_lbl.config(text="请先播放一首有歌词的歌")
+            return
+        self.music_status_lbl.config(text="正在AI翻译歌词...")
+        def _worker():
+            translated, err = mp.translate_lyrics(self._music_lyrics)
+            if translated:
+                self._post("music_lyrics_translated", translated)
+            else:
+                self._post("music_status", "翻译失败: " + (err or "未知原因"))
+        import threading
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _music_apply_translation(self, translated):
+        """翻译完成, 更新歌词显示为双语"""
+        self.music_lyric_list.delete(0, tk.END)
+        for i, (time, text) in enumerate(self._music_lyrics):
+            self.music_lyric_list.insert(tk.END, text)
+            if i in translated and translated[i]:
+                self.music_lyric_list.insert(tk.END, "    ♪ " + translated[i])
+        self.music_status_lbl.config(text="已加载双语歌词 (原文+翻译)")
+
+    def _music_update_lyric(self):
+        """定时更新歌词高亮(高亮当前句, 但不强制滚动)"""
+        import music_player as mp
+        try:
+            if mp.is_playing() and self._music_lyrics and not self._music_lyric_collapsed:
+                pos = mp.get_position()
+                idx = mp.get_current_lyric_index(pos)
+                if idx >= 0:
+                    # 双语模式下每首歌占2行, 原文在偶数行
+                    translated = mp.get_translated_lyrics()
+                    display_idx = idx * 2 if translated else idx
+                    self.music_lyric_list.selection_clear(0, tk.END)
+                    # 边界保护, 防止越界异常导致循环中断
+                    if 0 <= display_idx < self.music_lyric_list.size():
+                        self.music_lyric_list.selection_set(display_idx)
+                else:
+                    # 前奏期无歌词, 清除高亮
+                    self.music_lyric_list.selection_clear(0, tk.END)
+            # 同步桌面歌词
+            self._refresh_desktop_lyric()
+        except Exception:
+            pass
+        self._music_lyric_job = self.root.after(500, self._music_update_lyric)
+
+    def _music_toggle_desktop_lyric(self):
+        """开关桌面歌词悬浮窗"""
+        import music_player as mp
+        win = getattr(self, '_desk_lyric_win', None)
+        if win is not None and win.winfo_exists():
+            win.destroy()
+            self._desk_lyric_win = None
+            self.music_status_lbl.config(text="桌面歌词已关闭")
+            return
+        win = tk.Toplevel(self.root)
+        win.overrideredirect(True)
+        win.attributes('-topmost', True)
+        win.attributes('-alpha', 0.88)
+        win.configure(bg='#1a1a2e')
+        self._desk_lyric_font_size = 18
+        self._desk_lyric_alpha = 0.88
+
+        frame = tk.Frame(win, bg='#1a1a2e')
+        frame.pack(fill='both', expand=True)
+        # 歌名行
+        self._desk_lyric_title = tk.Label(frame, text='未播放', font=('微软雅黑', 10), fg='#9aa5b1', bg='#1a1a2e')
+        self._desk_lyric_title.pack(padx=24, pady=(14, 0), anchor='w')
+        # 当前歌词行(大)
+        self._desk_lyric_lbl = tk.Label(frame, text='♪ 播放歌曲后显示歌词', font=('微软雅黑', 18, 'bold'),
+                                        fg='#ffffff', bg='#1a1a2e')
+        self._desk_lyric_lbl.pack(padx=24, pady=(6, 0))
+        # 翻译行(小)
+        self._desk_lyric_sub = tk.Label(frame, text='', font=('微软雅黑', 12), fg='#7f8c9b', bg='#1a1a2e')
+        self._desk_lyric_sub.pack(padx=24, pady=(2, 14))
+
+        # 拖动逻辑
+        drag = {'x': 0, 'y': 0}
+        def _start(e):
+            drag['x'] = e.x_root - win.winfo_x()
+            drag['y'] = e.y_root - win.winfo_y()
+        def _move(e):
+            win.geometry('+{}+{}'.format(e.x_root - drag['x'], e.y_root - drag['y']))
+        for w in (frame, win, self._desk_lyric_title, self._desk_lyric_lbl, self._desk_lyric_sub):
+            w.bind('<Button-1>', _start)
+            w.bind('<B1-Motion>', _move)
+
+        # 右键菜单
+        menu = tk.Menu(win, tearoff=0)
+        menu.add_command(label="♡ 关闭桌面歌词", command=self._music_toggle_desktop_lyric)
+        menu.add_separator()
+        menu.add_command(label="歌词 +0.5s", command=lambda: self._desk_lyric_offset(0.5))
+        menu.add_command(label="歌词 -0.5s", command=lambda: self._desk_lyric_offset(-0.5))
+        menu.add_separator()
+        menu.add_command(label="字号 +", command=lambda: self._desk_lyric_font(2))
+        menu.add_command(label="字号 -", command=lambda: self._desk_lyric_font(-2))
+        menu.add_separator()
+        menu.add_command(label="更透明", command=lambda: self._desk_lyric_alpha_adj(-0.1))
+        menu.add_command(label="更不透明", command=lambda: self._desk_lyric_alpha_adj(0.1))
+        def _menu(e):
+            menu.tk_popup(e.x_root, e.y_root)
+        for w in (frame, win, self._desk_lyric_title, self._desk_lyric_lbl, self._desk_lyric_sub):
+            w.bind('<Button-3>', _menu)
+
+        win.geometry('+{}+{}'.format(self.root.winfo_x() + 220, self.root.winfo_y() + 220))
+        self._desk_lyric_win = win
+        self.music_status_lbl.config(text="桌面歌词已开启 (按住拖动, 右键菜单调节)")
+        self._refresh_desktop_lyric()
+
+    def _desk_lyric_offset(self, delta):
+        import music_player as mp
+        val = mp.set_lyric_offset(delta)
+        self.music_status_lbl.config(text="歌词偏移: {:+.1f}s".format(val))
+
+    def _desk_lyric_font(self, d):
+        if not getattr(self, '_desk_lyric_win', None):
+            return
+        size = max(10, min(40, self._desk_lyric_font_size + d))
+        self._desk_lyric_font_size = size
+        self._desk_lyric_lbl.config(font=('微软雅黑', size, 'bold'))
+
+    def _desk_lyric_alpha_adj(self, d):
+        if not getattr(self, '_desk_lyric_win', None):
+            return
+        a = max(0.3, min(1.0, self._desk_lyric_alpha + d))
+        self._desk_lyric_alpha = a
+        self._desk_lyric_win.attributes('-alpha', a)
+
+    def _refresh_desktop_lyric(self):
+        """刷新桌面歌词内容"""
+        try:
+            import music_player as mp
+            win = getattr(self, '_desk_lyric_win', None)
+            if win is None or not win.winfo_exists():
+                return
+            song = mp.get_current_song()
+            if song:
+                self._desk_lyric_title.config(text='{} - {}'.format(
+                    song.get('name', ''), song.get('artist', '')))
+            if mp.is_playing() and self._music_lyrics:
+                pos = mp.get_position()
+                idx = mp.get_current_lyric_index(pos)
+                if idx >= 0:
+                    self._desk_lyric_lbl.config(text=self._music_lyrics[idx][1])
+                    trans = mp.get_translated_lyrics()
+                    self._desk_lyric_sub.config(text=trans.get(idx, '') if trans else '')
+                else:
+                    self._desk_lyric_lbl.config(text='♪ 前奏')
+                    self._desk_lyric_sub.config(text='')
+            else:
+                self._desk_lyric_lbl.config(text='♪ 未在播放')
+                self._desk_lyric_sub.config(text='')
+        except Exception:
+            pass
+
+    def _music_toggle_lyric(self):
+        """收起/展开歌词"""
+        if self._music_lyric_collapsed:
+            self._music_lyric_frame.pack(fill="x", padx=10, pady=5)
+            self._music_lyric_toggle.config(text="▼ 歌词")
+            self._music_lyric_collapsed = False
+        else:
+            self._music_lyric_frame.pack_forget()
+            self._music_lyric_toggle.config(text="▶ 歌词 (已收起)")
+            self._music_lyric_collapsed = True
 
     def _music_volume(self, val):
         """音量调节"""
@@ -12620,6 +13765,19 @@ A: 下载后进入游戏 -> 选项 -> 资源包 -> 选中启用
         v = int(float(val))
         self.music_vol_lbl.config(text="{}%".format(v))
         mp.set_volume(v / 100.0)
+
+    def _music_toggle_follow(self):
+        """切换跟随系统音量"""
+        import music_player as mp
+        follow = self._music_follow_sys.get()
+        mp.set_follow_system_volume(follow)
+        if follow:
+            vol = mp.sync_system_volume()
+            self.music_vol_var.set(int(vol * 100))
+            self.music_vol_lbl.config(text="{}%".format(int(vol * 100)))
+            self.music_status_lbl.config(text="已跟随系统音量")
+        else:
+            self.music_status_lbl.config(text="已切换为独立音量")
 
 
 

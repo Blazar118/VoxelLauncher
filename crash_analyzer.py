@@ -207,3 +207,53 @@ class CrashAnalyzer:
         if not reports:
             return None
         return self.analyze(reports[0]["path"])
+
+
+# ================================================================
+# AI 智能排错: 把崩溃日志喂给 AI(智谱/Kimi/豆包), 返回诊断+修复方案
+# ================================================================
+DIAGNOSE_SYSTEM_PROMPT = """你是一位资深 Minecraft 模组排错专家, 精通 Forge/Fabric/NeoForge、Java 版本、模组冲突、崩溃日志分析。
+
+用户会给你一段 Minecraft 的崩溃日志或报错信息, 请你:
+1. 用通俗中文指出最可能的崩溃原因(一句话说清)
+2. 列出具体的修复步骤(按"先试哪个"排序, 每一步都要能直接照做)
+3. 如果涉及模组, 指出可能的问题模组(从堆栈包名判断)
+4. 如果涉及 Java 版本/内存/显卡驱动等环境问题, 明确指出
+
+要求:
+- 只输出诊断和修复建议, 不要客套话
+- 用 Markdown 分点, 步骤要可执行
+- 如果日志里信息不足, 明确说"信息不足", 并列出还需要什么信息
+- 不要编造日志里没有的结论, 不确定就说"可能""大概率"
+"""
+
+
+def ai_diagnose_crash(log_text, ai):
+    """调用 AI 诊断崩溃日志
+    log_text: 崩溃日志全文(可截断)
+    ai: ai_chat.AIChat 实例
+    返回: (成功, 诊断文本/错误)
+    """
+    if not ai.is_configured():
+        return False, "未配置 AI 接口, 请先在「设置」页配置 AI(智谱/Kimi/豆包)"
+    if not log_text or len(log_text.strip()) < 20:
+        return False, "日志内容太短, 无法诊断"
+    # 截取关键部分(前后各保留, 控制 token)
+    text = log_text.strip()
+    if len(text) > 12000:
+        text = text[:6000] + "\n\n...[日志过长已截断]...\n\n" + text[-6000:]
+    message = "以下是 Minecraft 崩溃日志/报错, 请诊断:\n\n" + text
+    return ai.chat(message, system_prompt=DIAGNOSE_SYSTEM_PROMPT, temperature=0.3)
+
+
+def ai_diagnose_latest(report_path, ai, max_chars=20000):
+    """读取崩溃日志文件并交给 AI 诊断"""
+    try:
+        with open(report_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+    except Exception as e:
+        return False, "读取日志失败: " + str(e)
+    if max_chars and len(content) > max_chars:
+        content = content[:max_chars]
+    return ai_diagnose_crash(content, ai)
+

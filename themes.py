@@ -46,6 +46,12 @@ THEMES = {
         "accent": "#22d3ee",
         "desc": "深海蓝",
     },
+    "cyber": {
+        "name": "科技暗色",
+        "bg": "#0a0e1a",
+        "accent": "#22d3ee",
+        "desc": "暗色毛玻璃 · 科技发光",
+    },
 }
 
 

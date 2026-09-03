@@ -35,6 +35,12 @@ class AIChat:
                 "model": "kimi-k2.5",
                 "backup_models": ["kimi-k3", "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
             },
+            "zhipu": {
+                "name": "智谱清言",
+                "url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+                "model": "glm-4.5-air",
+                "backup_models": ["glm-4-flash", "glm-4", "glm-4-plus", "glm-3-turbo"],
+            },
         }
 
     def set_provider(self, provider):

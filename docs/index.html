@@ -120,12 +120,72 @@
     .log-item .date { color: #888; font-size: 0.9em; }
     .log-item p { margin: 6px 0 0 0; color: #ccc; }
 </style>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        /* ===== 登录系统 ===== */
+        #loginBtn { cursor: pointer; }
+        #authBtn { cursor: pointer; }
+        .auth-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(5,8,18,0.72); backdrop-filter: blur(6px);
+            z-index: 9999; display: none; align-items: center; justify-content: center;
+        }
+        .auth-box {
+            width: 380px; background: #12182b; border: 1px solid #2a3a5e;
+            border-radius: 14px; padding: 26px 28px; color: #d4d4d4;
+            box-shadow: 0 0 40px rgba(56,189,248,0.25);
+        }
+        .auth-box h2 { color: #7dd3fc; margin-bottom: 16px; text-align: center; font-size: 20px; }
+        .auth-tabs { display: flex; margin-bottom: 18px; }
+        .auth-tabs span {
+            flex: 1; text-align: center; padding: 8px; cursor: pointer;
+            border-radius: 8px; color: #888; font-size: 14px;
+        }
+        .auth-tabs span.on { background: #1d2942; color: #7dd3fc; }
+        .auth-box input {
+            width: 100%; padding: 11px 12px; margin: 8px 0;
+            background: #0c1120; border: 1px solid #2a3a5e; border-radius: 8px;
+            color: #e2e8f0; font-size: 14px; box-sizing: border-box;
+        }
+        .auth-box input:focus { outline: none; border-color: #38bdf8; }
+        .auth-btn {
+            width: 100%; padding: 12px; margin-top: 14px;
+            background: linear-gradient(90deg,#0ea5e9,#22d3ee);
+            border: none; border-radius: 8px; color: #fff; font-size: 15px;
+            font-weight: bold; cursor: pointer;
+        }
+        .auth-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .auth-msg { margin-top: 12px; font-size: 13px; min-height: 18px; text-align: center; }
+        .auth-msg.ok { color: #4ade80; }
+        .auth-msg.err { color: #f87171; }
+        .auth-close {
+            position: absolute; top: 14px; right: 18px; cursor: pointer;
+            color: #888; font-size: 20px; background: none; border: none;
+        }
+        .auth-userbar { color: #7dd3fc; font-size: 13px; }
+        .auth-userbar .logout { color: #f87171; margin-left: 8px; cursor: pointer; text-decoration: underline; }
+        .save-tip {
+            margin-top: 14px; padding: 10px 12px; background: #1a2438;
+            border: 1px solid #38bdf8; border-radius: 8px; font-size: 13px;
+            color: #e2e8f0; display: none;
+        }
+        .save-tip b { color: #38bdf8; }
+    </style>
 </head>
 <body>
 
 <div class="nav">
     <div class="nav-inner">
         <div class="logo">VoxelLauncher</div>
+        <div style="margin-left:auto; display:flex; align-items:center; gap:16px;">
+            <span id="authUserBar" class="auth-userbar" style="display:none;"></span>
+            <button id="authBtn" onclick="openAuth()" style="
+                background:linear-gradient(90deg,#0ea5e9,#22d3ee); color:#fff;
+                border:none; border-radius:20px; padding:7px 20px; font-size:13px;
+                cursor:pointer; font-weight:bold;">登录 / 注册</button>
+        </div>
+
         <div>
             <a href="#features">功能</a>
             <a href="#fun">娱乐</a>
@@ -140,7 +200,7 @@
     <h1>Voxel<span>Launcher</span></h1>
     <p class="sub">一个功能全、上手快的 Minecraft 第三方启动器<br>装模组、开服、联机、玩点花活，一个软件全搞定</p>
     <a href="#download" class="btn">立即下载</a>
-    <div class="meta">当前版本 v2.2.28 · Windows 10/11 · 免安装，下载即用</div>
+    <div class="meta">当前版本 v2.2.43 · Windows 10/11 · 免安装，下载即用</div>
 </div>
 
 <section id="features">
@@ -316,6 +376,11 @@
         <h2>更新日志</h2>
     <div class="changelog">
         <div class="log-item">
+            <span class="version">v2.2.43</span>
+            <span class="date">2026-09-03</span>
+            <p>在线电视升级：视频在启动器内部区域直接播放（内置Edge内核，不再跳浏览器）；支持在页面内登录各平台账号；彩蛋触发后永久开启「📺 视频」页签；修复「平台首页/登录」按钮误打开搜索页的bug</p>
+        </div>
+        <div class="log-item">
             <span class="version">v2.2.28</span>
             <span class="date">2026-09-03</span>
             <p>多平台音乐播放器支持下载到本地；修复音乐播放器启动崩溃；优化版权限制提示</p>
@@ -388,8 +453,31 @@
     </div>
 </section>
 
+
+<!-- 登录弹窗 -->
+<div class="auth-overlay" id="authOverlay">
+    <div class="auth-box">
+        <button class="auth-close" onclick="closeAuth()">×</button>
+        <h2>🔑 VoxelLauncher 账号</h2>
+        <div class="auth-tabs">
+            <span id="tabLogin" class="on" onclick="switchTab('login')">登录</span>
+            <span id="tabReg" onclick="switchTab('reg')">注册</span>
+        </div>
+        <div>
+            <input id="authEmail" type="email" placeholder="邮箱地址" autocomplete="email">
+            <input id="authPass" type="password" placeholder="密码(至少6位)" autocomplete="current-password">
+            <div class="save-tip" id="saveTip">
+                🔒 <b>请务必保存好你的邮箱和密码！</b><br>
+                账号信息无法找回, 丢失将无法再登录。
+            </div>
+            <button class="auth-btn" id="authSubmit" onclick="doAuth()">登录</button>
+            <div class="auth-msg" id="authMsg"></div>
+        </div>
+    </div>
+</div>
+
 <footer>
-    <p>VoxelLauncher v2.2.28 · 由 Blazar118 开发 · 开源免费</p>
+    <p>VoxelLauncher v2.2.43 · 由 Blazar118 开发 · 开源免费</p>
     <p style="margin-top:8px;">
         <a href="https://github.com/Blazar118/VoxelLauncher" target="_blank">GitHub</a>
         ·
@@ -404,6 +492,101 @@ document.querySelectorAll('a[href^="#"]').forEach(a => {
         const t = document.querySelector(a.getAttribute('href'));
         if (t) t.scrollIntoView({ behavior: 'smooth' });
     });
+});
+</script>
+
+<script>
+/* ===== VoxelLauncher 官网登录系统 (Supabase) ===== */
+const SUPABASE_URL = 'https://cbdcjcyxkkcatzciowbn.supabase.co';
+const SUPABASE_ANON = 'sb_publishable_-RTvvkxmp1AgZmX5L8NK1w_I6wuNoww';
+let sbClient = null;
+try {
+    sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+} catch (e) { console.warn('Supabase init failed', e); }
+
+let authMode = 'login';
+
+function openAuth() { document.getElementById('authOverlay').style.display = 'flex'; }
+function closeAuth() {
+    document.getElementById('authOverlay').style.display = 'none';
+    document.getElementById('saveTip').style.display = 'none';
+}
+function switchTab(m) {
+    authMode = m;
+    document.getElementById('tabLogin').classList.toggle('on', m === 'login');
+    document.getElementById('tabReg').classList.toggle('on', m === 'reg');
+    document.getElementById('authSubmit').textContent = (m === 'login') ? '登录' : '注册';
+    document.getElementById('saveTip').style.display = (m === 'reg') ? 'block' : 'none';
+    setMsg('');
+}
+function setMsg(t, ok) {
+    const el = document.getElementById('authMsg');
+    el.textContent = t || '';
+    el.className = 'auth-msg ' + (ok ? 'ok' : (t ? 'err' : ''));
+}
+async function doAuth() {
+    const email = document.getElementById('authEmail').value.trim();
+    const pass = document.getElementById('authPass').value;
+    if (!email || !pass) { setMsg('请填写邮箱和密码'); return; }
+    if (pass.length < 6) { setMsg('密码至少 6 位'); return; }
+    const btn = document.getElementById('authSubmit');
+    btn.disabled = true; setMsg('处理中...');
+    try {
+        if (authMode === 'login') {
+            const { data, error } = await sbClient.auth.signInWithPassword({ email, password: pass });
+            if (error) { setMsg(error.message); btn.disabled = false; return; }
+        } else {
+            const { data, error } = await sbClient.auth.signUp({ email, password: pass });
+            if (error) { setMsg(error.message); btn.disabled = false; return; }
+            if (!data.session) {
+                setMsg('注册成功！请前往邮箱点击确认链接后再登录。', true);
+                btn.disabled = false; return;
+            }
+        }
+        setMsg('登录成功!'); btn.disabled = false;
+        // 登录成功 → 弹窗自动消失 + 提醒保存账号
+        setTimeout(() => { closeAuth(); }, 400);
+        setTimeout(() => {
+            alert('✅ 登录成功！\n\n请务必保存好你的账号信息:\n邮箱: ' + email + '\n密码: ' + pass + '\n\n账号丢失将无法找回, 建议记到备忘录。');
+        }, 500);
+        refreshUserBar();
+    } catch (e) {
+        setMsg('网络错误: ' + e.message); btn.disabled = false;
+    }
+}
+async function refreshUserBar() {
+    if (!sbClient) return;
+    const { data } = await sbClient.auth.getUser();
+    const bar = document.getElementById('authUserBar');
+    const btn = document.getElementById('authBtn');
+    if (data && data.user) {
+        bar.style.display = 'inline';
+        bar.innerHTML = '👤 ' + data.user.email + ' <span class="logout" onclick="logout()">退出</span>';
+        btn.style.display = 'none';
+        // 登录后信息上传(profiles 表, 若表不存在则静默跳过)
+        try {
+            const email = data.user.email;
+            const name = email ? email.split('@')[0] : 'player';
+            await sbClient.from('profiles').upsert(
+                { id: data.user.id, email: email, nickname: name, updated_at: new Date().toISOString() },
+                { onConflict: 'id' }
+            );
+        } catch (e) { /* 表未创建时忽略 */ }
+    } else {
+        bar.style.display = 'none'; bar.innerHTML = '';
+        btn.style.display = 'inline';
+    }
+}
+async function logout() {
+    if (sbClient) await sbClient.auth.signOut();
+    refreshUserBar();
+}
+// 启动时恢复登录状态
+window.addEventListener('DOMContentLoaded', () => {
+    if (sbClient) {
+        sbClient.auth.onAuthStateChange(() => refreshUserBar());
+        refreshUserBar();
+    }
 });
 </script>
 </body>

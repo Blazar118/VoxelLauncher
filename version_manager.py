@@ -400,32 +400,40 @@ def _merge_version(parent, child):
     return merged
 
 
-def download_version(version_id, progress_cb=None, cancel_event=None):
+def download_version(version_id, progress_cb=None, cancel_event=None,
+                     target_dir=None):
     """
     完整下载一个版本(含 jar/libraries/assets)。
     若该版本继承原版(inheritsFrom), 会先确保原版完整下载。
     progress_cb(phase, current, total) 用于界面刷新。
+    target_dir: 指定下载到的目标目录(通常为实例文件夹)。
+      传入时, version.json 与客户端 jar 会写到该目录根下,
+      而不写入 versions/{id}/; libraries/assets 仍为全局共享。
+      不传时维持原逻辑(下载到 versions/{id}/)。
     """
     game_dir = CONFIG.get("game_dir")
     if cancel_event and cancel_event.is_set():
         return
 
-    # 1. version.json
+    # 1. version.json —— 有 target_dir 就写实例文件夹, 否则 versions/
     version_json = fetch_version_json(version_id)
-    vdir = get_version_dir(game_dir, version_id)
+    if target_dir:
+        vdir = Path(target_dir)
+    else:
+        vdir = get_version_dir(game_dir, version_id)
     vdir.mkdir(parents=True, exist_ok=True)
     (vdir / (version_id + ".json")).write_text(
         json.dumps(version_json, ensure_ascii=False, indent=2), encoding="utf-8")
     if progress_cb:
         progress_cb("已下载版本描述文件", 0, 0)
 
-    # 1.5 继承版本: 先确保原版完整
+    # 1.5 继承版本: 先确保原版完整(同样写入目标实例文件夹)
     base = version_json.get("inheritsFrom")
     if base:
         if progress_cb:
             progress_cb("需要先安装基础版本: " + base, 0, 0)
         download_version(base, progress_cb=progress_cb,
-                         cancel_event=cancel_event)
+                         cancel_event=cancel_event, target_dir=target_dir)
 
     # 2. 客户端 jar(仅当本版本自带 jar)
     dl = version_json.get("downloads", {})
